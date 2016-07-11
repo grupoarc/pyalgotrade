@@ -1,4 +1,9 @@
- you may not use this file except in compliance with the License.
+# PyAlgoTrade
+#
+# Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
 #   http://www.apache.org/licenses/LICENSE-2.0
@@ -13,79 +18,14 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
-import datetime
 import time
 import Queue
 
 from pyalgotrade import bar
 from pyalgotrade import barfeed
 from pyalgotrade import observer
-from pyalgotrade.bitstamp import common
-from pyalgotrade.bitstamp import wsclient
-
-
-class TradeBar(bar.Bar):
-    # Optimization to reduce memory footprint.
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount')
-
-    def __init__(self, dateTime, trade):
-        self.__dateTime = dateTime
-        self.__tradeId = trade.getId()
-        self.__price = trade.getPrice()
-        self.__amount = trade.getAmount()
-        self.__buy = trade.isBuy()
-
-    def __setstate__(self, state):
-        (self.__dateTime, self.__tradeId, self.__price, self.__amount) = state
-
-    def __getstate__(self):
-        return (self.__dateTime, self.__tradeId, self.__price, self.__amount)
-
-    def setUseAdjustedValue(self, useAdjusted):
-        if useAdjusted:
-            raise Exception("Adjusted close is not available")
-
-    def getTradeId(self):
-        return self.__tradeId
-
-    def getFrequency(self):
-        return bar.Frequency.TRADE
-
-    def getDateTime(self):
-        return self.__dateTime
-
-    def getOpen(self, adjusted=False):
-        return self.__price
-
-    def getHigh(self, adjusted=False):
-        return self.__price
-
-    def getLow(self, adjusted=False):
-        return self.__price
-
-    def getClose(self, adjusted=False):
-        return self.__price
-
-    def getVolume(self):
-        return self.__amount
-
-    def getAdjClose(self):
-        return None
-
-    def getTypicalPrice(self):
-        return self.__price
-
-    def getPrice(self):
-        return self.__price
-
-    def getUseAdjValue(self):
-        return False
-
-    def isBuy(self):
-        return self.__buy
-
-    def isSell(self):
-        return not self.__buy
+from pyalgotrade.coinbase import common
+from pyalgotrade.coinbase import wsclient
 
 
 class LiveTradeFeed(barfeed.BaseBarFeed):
@@ -146,9 +86,6 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             common.logger.error("Initialization failed.")
         return self.__initializationOk
 
-    def __onConnected(self):
-        self.__initializationOk = True
-
     def __onDisconnected(self):
         if self.__enableReconnection:
             initialized = False
@@ -169,11 +106,11 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
             ret = True
             if eventType == wsclient.WebSocketClient.ON_TRADE:
-                self.__onTrade(eventData)
+                self.__barDicts.append({ common.btc_symbol: eventData })
             elif eventType == wsclient.WebSocketClient.ON_ORDER_BOOK_UPDATE:
                 self.__orderBookUpdateEvent.emit(eventData)
             elif eventType == wsclient.WebSocketClient.ON_CONNECTED:
-                self.__onConnected()
+                self.__initializationOk = True
             elif eventType == wsclient.WebSocketClient.ON_DISCONNECTED:
                 self.__onDisconnected()
             else:
@@ -182,21 +119,6 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         except Queue.Empty:
             pass
         return ret
-
-    # Bar datetimes should not duplicate. In case trade object datetimes conflict, we just move one slightly forward.
-    def __getTradeDateTime(self, trade):
-        ret = trade.getDateTime()
-        if ret == self.__prevTradeDateTime:
-            ret += datetime.timedelta(microseconds=1)
-        self.__prevTradeDateTime = ret
-        return ret
-
-    def __onTrade(self, trade):
-        # Build a bar for each trade.
-        barDict = {
-            common.btc_symbol: TradeBar(self.__getTradeDateTime(trade), trade)
-            }
-        self.__barDicts.append(barDict)
 
     def barsHaveAdjClose(self):
         return False
@@ -223,12 +145,9 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     def dispatch(self):
         # Note that we may return True even if we didn't dispatch any Bar
         # event.
-        ret = False
-        if self.__dispatchImpl(None):
-            ret = True
-        if super(LiveTradeFeed, self).dispatch():
-            ret = True
-        return ret
+        if self.__dispatchImpl(None): return True
+        if super(LiveTradeFeed, self).dispatch(): return True
+        return False
 
     # This should not raise.
     def stop(self):
@@ -252,8 +171,8 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         """
         Returns the event that will be emitted when the orderbook gets updated.
 
-        Event handlers should receive one parameter:
-         1. A :class:`pyalgotrade.orderbook.MarketSnapshot` instance.
+        Eventh handlers should receive one parameter:
+         1. A :class:`pyalgotrade.bitstamp.wsclient.OrderBookUpdate` instance.
 
         :rtype: :class:`pyalgotrade.observer.Event`.
         """
