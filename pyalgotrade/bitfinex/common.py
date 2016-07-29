@@ -1,4 +1,4 @@
-# PyAlgoTrade BitFinex module
+# PyAlgoTrade
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #
@@ -13,19 +13,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Modified from PyAlgoTrade Bitstamp and Xignite modules
 
 """
-.. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
+.. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
 import pyalgotrade.logger
 from pyalgotrade import broker
 
 
-btc_symbol = "btcusd"
 logger = pyalgotrade.logger.getLogger("bitfinex")
+btc_symbol = "BTC"
 
 
 class BTCTraits(broker.InstrumentTraits):
