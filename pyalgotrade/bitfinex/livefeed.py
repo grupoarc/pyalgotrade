@@ -1,4 +1,4 @@
-# PyAlgoTrade BitFinex module
+# PyAlgoTrade
 #
 # Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
 #
@@ -13,300 +13,167 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# Modified from PyAlgoTrade Bitstamp and Xignite modules
 
 """
-.. moduleauthor:: Mikko Gozalo <mikgozalo@gmail.com>
+.. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
-
 
 import time
-import datetime
-import threading
 import Queue
 
 from pyalgotrade import bar
 from pyalgotrade import barfeed
-from pyalgotrade import dataseries
-from pyalgotrade import logger
-from pyalgotrade.utils import dt
 from pyalgotrade import observer
-
-import api
-
-
-logger = logger.getLogger("bitfinex")
+from pyalgotrade.bitfinex import common
+from pyalgotrade.bitfinex import wsclient
 
 
-def utcnow():
-    return dt.as_utc(datetime.datetime.utcnow())
+class LiveTradeFeed(barfeed.BaseBarFeed):
 
+    """A real-time BarFeed that builds bars from live trades.
 
-class TradeBar(bar.Bar):
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount', '__type')
+    :param maxLen: The maximum number of values that the :class:`pyalgotrade.dataseries.bards.BarDataSeries` will hold.
+        Once a bounded length is full, when new items are added, a corresponding number of items are discarded
+        from the opposite end. If None then dataseries.DEFAULT_MAX_LEN is used.
+    :type maxLen: int.
 
-    last_datetime = None
-
-    def __init__(self, bardict):
-        trade_dt = datetime.datetime.fromtimestamp(bardict['timestamp'])
-        if TradeBar.last_datetime is not None:
-            if trade_dt <= TradeBar.last_datetime:
-                trade_dt = (
-                    TradeBar.last_datetime +
-                    datetime.timedelta(seconds=0.01)
-                )
-
-        TradeBar.last_datetime = trade_dt
-        self.__dateTime = trade_dt
-        self.__tradeId = bardict['tid']
-        self.__price = float(bardict['price'])
-        self.__amount = float(bardict['amount'])
-        self.__type = bardict['type']
-
-    def __setstate__(self, state):
-        (
-            self.__dateTime,
-            self.__tradeId,
-            self.__price,
-            self.__amount,
-            self.__type
-        ) = state
-
-    def __getstate__(self):
-        return (
-            self.__dateTime,
-            self.__tradeId,
-            self.__price,
-            self.__amount,
-            self.__type
-        )
-
-    def setUseAdjustedValue(self, useAdjusted):
-        if useAdjusted:
-            raise Exception("Adjusted close is not available")
-
-    def getTradeId(self):
-        return self.__tradeId
-
-    def getType(self):
-        return self.__type
-
-    def getFrequency(self):
-        return bar.Frequency.TRADE
-
-    def getDateTime(self):
-        return self.__dateTime
-
-    def getOpen(self, adjusted=False):
-        return self.__price
-
-    def getHigh(self, adjusted=False):
-        return self.__price
-
-    def getLow(self, adjusted=False):
-        return self.__price
-
-    def getClose(self, adjusted=False):
-        return self.__price
-
-    def getVolume(self):
-        return self.__amount
-
-    def getAdjClose(self):
-        return None
-
-    def getTypicalPrice(self):
-        return self.__price
-
-    def getPrice(self):
-        return self.__price
-
-    def getUseAdjValue(self):
-        return False
-
-
-class PollingThread(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.__stopped = False
-
-    def __wait(self):
-        nextCall = self.getNextCallDateTime()
-        while not self.__stopped and utcnow() < nextCall:
-            time.sleep(0.5)
-
-    def stop(self):
-        self.__stopped = True
-
-    def stopped(self):
-        return self.__stopped
-
-    def run(self):
-        logger.info("Thread started")
-        while not self.__stopped:
-            self.__wait()
-            if not self.__stopped:
-                try:
-                    self.doCall()
-                except Exception, e:
-                    logger.critical("Unhandled exception", exc_info=e)
-        logger.debug("Thread finished.")
-
-    # Must return a non-naive datetime.
-    def getNextCallDateTime(self):
-        raise NotImplementedError()
-
-    def doCall(self):
-        raise NotImplementedError()
-
-
-class TradesAPIThread(PollingThread):
-
-    # Events
-    ON_TRADE = 1
-    ON_ORDER_BOOK_UPDATE = 2
-
-    def __init__(self, queue, identifiers, apiCallDelay):
-        PollingThread.__init__(self)
-
-        self.__queue = queue
-        self.__identifiers = identifiers
-        self.__frequency = bar.Frequency.TRADE
-        self.__apiCallDelay = apiCallDelay
-        self.last_tid = 0
-        self.last_orderbook_ts = 0
-
-    def getNextCallDateTime(self):
-        return utcnow() + self.__apiCallDelay
-
-    def doCall(self):
-        for identifier in self.__identifiers:
-            try:
-                trades = api.get_trades(identifier)
-                trades.reverse()
-                for barDict in trades:
-                    bar = {}
-                    trade = TradeBar(barDict)
-                    bar[identifier] = trade
-                    tid = trade.getTradeId()
-                    if tid > self.last_tid:
-                        self.last_tid = tid
-                        self.__queue.put((
-                            TradesAPIThread.ON_TRADE, bar
-                        ))
-                orders = api.get_orderbook(identifier)
-                if len(orders['bids']) and len(orders['asks']):
-                    best_ask = orders['asks'][0]
-                    best_bid = orders['bids'][0]
-                    last_update = max(
-                        best_ask['timestamp'], best_bid['timestamp']
-                    )
-                    if last_update > self.last_orderbook_ts:
-                        self.last_orderbook_ts = last_update
-                        self.__queue.put((
-                            TradesAPIThread.ON_ORDER_BOOK_UPDATE,
-                            {
-                                'bid': float(best_bid['price']),
-                                'ask': float(best_ask['price'])
-                            }
-                        ))
-            except api.BitfinexError, e:
-                logger.error(e)
-
-
-class LiveFeed(barfeed.BaseBarFeed):
+    .. note::
+        Note that a Bar will be created for every trade, so open, high, low and close values will all be the same.
+    """
 
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(
-            self,
-            identifiers,
-            apiCallDelay=5,
-            maxLen=dataseries.DEFAULT_MAX_LEN
-    ):
-        logger.info('Livefeed created')
-        barfeed.BaseBarFeed.__init__(self, bar.Frequency.TRADE, maxLen)
-        if not isinstance(identifiers, list):
-            raise Exception("identifiers must be a list")
-
-        self.__queue = Queue.Queue()
+    def __init__(self, maxLen=None):
+        super(LiveTradeFeed, self).__init__(bar.Frequency.TRADE, maxLen)
+        self.__barDicts = []
+        self.registerInstrument(common.btc_symbol)
+        self.__prevTradeDateTime = None
+        self.__thread = None
+        self.__initializationOk = None
+        self.__enableReconnection = True
+        self.__stopped = False
         self.__orderBookUpdateEvent = observer.Event()
-        self.__thread = TradesAPIThread(
-            self.__queue,
-            identifiers,
-            datetime.timedelta(seconds=apiCallDelay)
-        )
-        self.__bars = []
-        for instrument in identifiers:
-            self.registerInstrument(instrument)
 
-    # observer.Subject interface
-    def start(self):
-        if self.__thread.is_alive():
-            raise Exception("Already strated")
-        self.__thread.start()
+    # Factory method for testing purposes.
+    def buildWebSocketClientThread(self):
+        return wsclient.WebSocketClientThread()
 
-    def stop(self):
-        self.__thread.stop()
-
-    def join(self):
-        if self.__thread.is_alive():
-            self.__thread.join()
-
-    def eof(self):
-        return self.__thread.stopped()
-
-    def peekDateTime(self):
-        return None
-
-    # barfeed.BaseBarFeed interface
     def getCurrentDateTime(self):
-        return utcnow()
+        return wsclient.get_current_datetime()
 
-    def barsHaveAdjClose(self):
-        return False
+    def enableReconection(self, enableReconnection):
+        self.__enableReconnection = enableReconnection
 
-    def dispatch(self):
-        ret = False
-        if self.__dispatchImpl(None):
-            ret = True
-        if barfeed.BaseBarFeed.dispatch(self):
-            ret = True
-        return ret
+    def __initializeClient(self):
+        self.__initializationOk = None
+        common.logger.info("Initializing websocket client.")
+
+        try:
+            # Start the thread that runs the client.
+            self.__thread = self.buildWebSocketClientThread()
+            self.__thread.start()
+        except Exception, e:
+            self.__initializationOk = False
+            common.logger.error("Error connecting : %s" % str(e))
+
+        # Wait for initialization to complete.
+        while self.__initializationOk is None and self.__thread.is_alive():
+            self.__dispatchImpl([wsclient.WebSocketClient.ON_CONNECTED])
+
+        if self.__initializationOk:
+            common.logger.info("Initialization ok.")
+        else:
+            common.logger.error("Initialization failed.")
+        return self.__initializationOk
+
+    def __onDisconnected(self):
+        if self.__enableReconnection:
+            initialized = False
+            while not self.__stopped and not initialized:
+                common.logger.info("Reconnecting")
+                initialized = self.__initializeClient()
+                if not initialized:
+                    time.sleep(5)
+        else:
+            self.__stopped = True
 
     def __dispatchImpl(self, eventFilter):
         ret = False
         try:
-            eventType, eventData = self.__queue.get(
-                True, LiveFeed.QUEUE_TIMEOUT
-            )
+            eventType, eventData = self.__thread.getQueue().get(True, LiveTradeFeed.QUEUE_TIMEOUT)
             if eventFilter is not None and eventType not in eventFilter:
                 return False
 
             ret = True
-            if eventType == TradesAPIThread.ON_TRADE:
-                self.__onTrade(eventData)
-            elif eventType == TradesAPIThread.ON_ORDER_BOOK_UPDATE:
+            if eventType == wsclient.WebSocketClient.ON_TRADE:
+                self.__barDicts.append({ common.btc_symbol: eventData })
+            elif eventType == wsclient.WebSocketClient.ON_ORDER_BOOK_UPDATE:
                 self.__orderBookUpdateEvent.emit(eventData)
+            elif eventType == wsclient.WebSocketClient.ON_CONNECTED:
+                self.__initializationOk = True
+            elif eventType == wsclient.WebSocketClient.ON_DISCONNECTED:
+                self.__onDisconnected()
             else:
                 ret = False
-                logger.error(
-                    "Invalid event received to dispatch: %s - %s" % (
-                        eventType, eventData
-                    )
-                )
+                common.logger.error("Invalid event received to dispatch: %s - %s" % (eventType, eventData))
         except Queue.Empty:
             pass
         return ret
 
-    def __onTrade(self, barData):
-        self.__bars.append(barData)
+    def barsHaveAdjClose(self):
+        return False
 
     def getNextBars(self):
-        if len(self.__bars):
-            return bar.Bars(self.__bars.pop(0))
+        ret = None
+        if len(self.__barDicts):
+            ret = bar.Bars(self.__barDicts.pop(0))
+        return ret
+
+    def peekDateTime(self):
+        # Return None since this is a realtime subject.
         return None
 
+    # This may raise.
+    def start(self):
+        super(LiveTradeFeed, self).start()
+        if self.__thread is not None:
+            raise Exception("Already running")
+        elif not self.__initializeClient():
+            self.__stopped = True
+            raise Exception("Initialization failed")
+
+    def dispatch(self):
+        # Note that we may return True even if we didn't dispatch any Bar
+        # event.
+        if self.__dispatchImpl(None): return True
+        if super(LiveTradeFeed, self).dispatch(): return True
+        return False
+
+    # This should not raise.
+    def stop(self):
+        try:
+            self.__stopped = True
+            if self.__thread is not None and self.__thread.is_alive():
+                common.logger.info("Shutting down websocket client.")
+                self.__thread.stop()
+        except Exception, e:
+            common.logger.error("Error shutting down client: %s" % (str(e)))
+
+    # This should not raise.
+    def join(self):
+        if self.__thread is not None:
+            self.__thread.join()
+
+    def eof(self):
+        return self.__stopped
+
     def getOrderBookUpdateEvent(self):
+        """
+        Returns the event that will be emitted when the orderbook gets updated.
+
+        Eventh handlers should receive one parameter:
+         1. A :class:`pyalgotrade.bitstamp.wsclient.OrderBookUpdate` instance.
+
+        :rtype: :class:`pyalgotrade.observer.Event`.
+        """
         return self.__orderBookUpdateEvent
