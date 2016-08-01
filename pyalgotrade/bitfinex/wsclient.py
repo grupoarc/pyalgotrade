@@ -37,7 +37,7 @@ def get_current_datetime():
 
 class TradeBar(bar.Bar):
     # Optimization to reduce memory footprint.
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount')
+    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount', '__buy')
 
     def __init__(self, dateTime, tradeId, price, amount, isBuy):
         self.__dateTime = dateTime
@@ -47,10 +47,10 @@ class TradeBar(bar.Bar):
         self.__buy = isBuy
 
     def __setstate__(self, state):
-        (self.__dateTime, self.__tradeId, self.__price, self.__amount) = state
+        (self.__dateTime, self.__tradeId, self.__price, self.__amount, self.__buy) = state
 
     def __getstate__(self):
-        return (self.__dateTime, self.__tradeId, self.__price, self.__amount)
+        return (self.__dateTime, self.__tradeId, self.__price, self.__amount, self.__buy)
 
     def setUseAdjustedValue(self, useAdjusted):
         if useAdjusted:
@@ -64,6 +64,9 @@ class TradeBar(bar.Bar):
 
     def getDateTime(self):
         return self.__dateTime
+
+    def setDateTime(self, value):
+        self.__dateTime = value
 
     def getOpen(self, adjusted=False):
         return self.__price
@@ -117,7 +120,7 @@ class TradeBar(bar.Bar):
             common.logger.error("unknown bitfinex trade type: " + repr(t))
             raise SyntaxError("unknown bitfinex trade type: " + repr(t))
         size = float(size)
-        return cls(timestamp, tid, float(price), abs(size), size>0)
+        return cls(float(timestamp), tid, float(price), abs(size), size>0)
 
 
 class WebSocketClient(WebSocketClientBase):
@@ -134,6 +137,7 @@ class WebSocketClient(WebSocketClientBase):
         self.__queue = Queue.Queue()
         self._book = Book("bitfinex", "BTCUSD")
         self._channel = {}
+        self.__lastTradeTime = 0.0
 
     def getQueue(self):
         return self.__queue
@@ -175,13 +179,23 @@ class WebSocketClient(WebSocketClientBase):
                 if contents[0] not in ('te', 'tu'): return # skip snapshot
                 if contents[0] != 'tu': return
                 #common.logger.info("trading " + repr(contents))
-                b = TradeBar.fromBitfinexTrade(contents)
+                b = self._getTradeBar(contents)
                 self.__queue.put((WebSocketClient.ON_TRADE, b))
             elif chan == 'book':
                 self._book.update(toMarketMessage(contents, 'BTCUSD'))
                 b = self._book.OrderBookUpdate()
                 #common.logger.info("updating " + repr(b))
                 self.__queue.put((WebSocketClient.ON_ORDER_BOOK_UPDATE, b))
+
+    def _getTradeBar(self, contents):
+        # hackery to make datetime be monotonic
+        b = TradeBar.fromBitfinexTrade(contents)
+        if b.getDateTime() <= self.__lastTradeTime:
+            state = list(b.__getstate__())
+            state[0] = self.__lastTradeTime + 0.001
+            b.__setstate__(state)
+        self.__lastTradeTime = b.getDateTime()
+        return b
 
     def onClosed(self, code, reason):
         common.logger.info("Closed. Code: %s. Reason: %s." % (code, reason))

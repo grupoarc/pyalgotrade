@@ -7,6 +7,7 @@ import posixpath
 import json
 from decimal import Decimal
 import hmac, hashlib, requests
+from collections import namedtuple
 
 from requests.auth import AuthBase
 
