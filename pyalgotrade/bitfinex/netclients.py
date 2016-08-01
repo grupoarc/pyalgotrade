@@ -196,6 +196,11 @@ class BitfinexAuth(AuthBase):
 URL='https://api.bitfinex.com/v1'
 
 
+
+BitfinexOrder = namedtuple('BitfinexOrder', 'id symbol exchange price avg_execution_price side type timestamp is_live is_cancelled is_hidden oco_order was_forced executed_amount remaining_amount original_amount')
+BitfinexOrder.__new__.__defaults__ = (None,) * len(BitfinexOrder._fields)
+
+
 @singleton
 class RESTClient:
 
@@ -230,11 +235,6 @@ class RESTClient:
         return { b['currency'].upper() : float(b['available']) for b in self.raw_balances()
                  if b['type'] == 'exchange' }
 
-    def Balances(self):
-        now = time.time()
-        B = lambda j: Balance(now, now, VENUE, j['currency'].upper(), Decimal(j['amount']))
-        return Balances(now, now, VENUE, [ B(b) for b in self.balances() ])
-
     def book(self, symbol=BTCUSD, raw=False):
         book = self._get('book', LOCAL_SYMBOL[symbol])
         if raw: return book.text
@@ -265,6 +265,19 @@ class RESTClient:
         if postonly: r['is_postonly'] = 'true'
         return self._auth_postj('order', 'new', data=r)
 
+    def Order(self, *args, **kwargs):
+        j = self.order(*args, **kwargs)
+        return BitfinexOrder(**j)
+
+    limitorder = Order
+
+    def orders(self):
+        return self._auth_postj('orders')
+
+    def cancel(self, oid):
+        r = { 'order_id': int(oid) }
+        return self._auth_postj('order', 'cancel', data=r)
+
     def order_multi(self, orders):
         # orders is an iterable of {Limit,Market}Order objects
         data = []
@@ -279,8 +292,6 @@ class RESTClient:
                          })
         return self._auth_postj('order/new/multi', data={'orders': data})
 
-    def orders(self):
-        return self._auth_postj('orders')
 
     def order_statuses(self):
         os = []

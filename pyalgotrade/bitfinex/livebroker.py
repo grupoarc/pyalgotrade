@@ -35,6 +35,10 @@ class BTCTraits(broker.InstrumentTraits):
 
 
 def build_order_from_open_order(openOrder, instrumentTraits):
+    """
+    This is the main per-venue routine, as it adapts an openOrder
+    (of whatever type/fieldset is per-venue) into a broker.LimitOrder
+    """
     if openOrder.side == 'buy':
         action = broker.Order.Action.BUY
     elif openOrder.side == 'sell':
@@ -43,9 +47,10 @@ def build_order_from_open_order(openOrder, instrumentTraits):
         raise Exception("Invalid order type")
 
     price = float(openOrder.price)
-    size = float(openOrder.size)
+    size = float(openOrder.original_amount)
+    created = float(openOrder.timestamp)
     ret = broker.LimitOrder(action, btc_symbol, price, size, instrumentTraits)
-    ret.setSubmitted(openOrder.id, openOrder.created_at)
+    ret.setSubmitted(openOrder.id, created)
     ret.setState(broker.Order.State.ACCEPTED)
     return ret
 
@@ -278,10 +283,9 @@ class LiveBroker(broker.Broker):
             side = "buy" if order.isBuy() else "sell"
             price = order.getLimitPrice()
             size =order.getQuantity()
-            newOrderId = self.__httpClient.limitorder(side, price, size)
-            newOrder = self.__httpClient.Order(newOrderId)
+            newOrder = self.__httpClient.limitorder(side, price, size)
 
-            order.setSubmitted(newOrderId, newOrder.created_at)
+            order.setSubmitted(newOrder.id, newOrder.timestamp)
             self._registerOrder(order)
             # Switch from INITIAL -> SUBMITTED
             # IMPORTANT: Do not emit an event for this switch because when using the position interface
