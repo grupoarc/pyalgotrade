@@ -53,6 +53,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         self.__enableReconnection = True
         self.__stopped = False
         self.__orderBookUpdateEvent = observer.Event()
+        self.__matchEvent = observer.Event()
 
     # Factory method for testing purposes.
     def buildWebSocketClientThread(self):
@@ -107,6 +108,8 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             ret = True
             if eventType == wsclient.WebSocketClient.ON_TRADE:
                 self.__barDicts.append({ common.btc_symbol: eventData })
+            elif eventType == wsclient.WebSocketClient.ON_MATCH:
+                self.__matchEvent.emit(eventData)
             elif eventType == wsclient.WebSocketClient.ON_ORDER_BOOK_UPDATE:
                 self.__orderBookUpdateEvent.emit(eventData)
             elif eventType == wsclient.WebSocketClient.ON_CONNECTED:
@@ -137,7 +140,8 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     def start(self):
         super(LiveTradeFeed, self).start()
         if self.__thread is not None:
-            raise Exception("Already running")
+            pass
+            #raise Exception("Already running")
         elif not self.__initializeClient():
             self.__stopped = True
             raise Exception("Initialization failed")
@@ -159,6 +163,9 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         except Exception, e:
             common.logger.error("Error shutting down client: %s" % (str(e)))
 
+    def isAlive(self):
+        return self.__thread.isAlive()
+
     # This should not raise.
     def join(self):
         if self.__thread is not None:
@@ -177,3 +184,8 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         :rtype: :class:`pyalgotrade.observer.Event`.
         """
         return self.__orderBookUpdateEvent
+
+    def getMatchEvent(self):
+        return self.__matchEvent
+
+

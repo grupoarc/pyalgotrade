@@ -23,7 +23,7 @@ from datetime import datetime
 import threading
 import Queue
 
-from pyalgotrade import bar
+from pyalgotrade import bar, broker
 from pyalgotrade.websocket.client import WebSocketClientBase
 from pyalgotrade.coinbase import common
 from pyalgotrade.coinbase.book import Book, MarketUpdate
@@ -35,77 +35,40 @@ from pyalgotrade.coinbase.netclients import toBookMessages
 def get_current_datetime():
     return datetime.now()
 
+EPOCH = datetime(1970,1,1)
 
-class TradeBar(bar.Bar):
-    # Optimization to reduce memory footprint.
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount')
+class CoinbaseMatch(object):
 
-    def __init__(self, dateTime, tradeId, price, amount, isBuy):
-        self.__dateTime = dateTime
-        self.__tradeId = tradeId
-        self.__price = price
-        self.__amount = amount
-        self.__buy = isBuy
+    def __init__(self, json):
+        self._j = json
 
-    def __setstate__(self, state):
-        (self.__dateTime, self.__tradeId, self.__price, self.__amount) = state
+    @property
+    def time(self):
+        return (datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ") - EPOCH).total_seconds()
 
-    def __getstate__(self):
-        return (self.__dateTime, self.__tradeId, self.__price, self.__amount)
+    @property
+    def price(self): return float(self._j['price'])
 
-    def setUseAdjustedValue(self, useAdjusted):
-        if useAdjusted:
-            raise Exception("Adjusted close is not available")
+    @property
+    def size(self): return float(self._j['size'])
 
-    def getTradeId(self):
-        return self.__tradeId
-
-    def getFrequency(self):
-        return bar.Frequency.TRADE
-
-    def getDateTime(self):
-        return self.__dateTime
-
-    def getOpen(self, adjusted=False):
-        return self.__price
-
-    def getHigh(self, adjusted=False):
-        return self.__price
-
-    def getLow(self, adjusted=False):
-        return self.__price
-
-    def getClose(self, adjusted=False):
-        return self.__price
-
-    def getVolume(self):
-        return self.__amount
-
-    def getAdjClose(self):
+    def involves(self, oidlist):
+        for oid in (self._j['maker_order_id'], self._j['taker_order_id']):
+            if oid in oidlist: return oid
         return None
 
-    def getTypicalPrice(self):
-        return self.__price
+    def BasicBar(self):
+        open_ = high = low = close = self.price
+        volume = self.size
+        adjClose = None
+        freq = bar.Frequency.TRADE
+        return bar.BasicBar(self.time, open_, high, low, close, volume, adjClose, freq)
 
-    def getPrice(self):
-        return self.__price
+    def OrderExecutionInfo(self):
+        fee = self.price * self.size * 0.0025 # FIXME FIXME FIXME
 
-    def getUseAdjValue(self):
-        return False
+        return broker.OrderExecutionInfo(self.price, self.size, fee, self.time)
 
-    def isBuy(self):
-        return self.__buy
-
-    def isSell(self):
-        return not self.__buy
-
-    EPOCH = datetime(1970,1,1)
-
-    @classmethod
-    def fromCoinbaseMatch(cls, match):
-        time = (datetime.strptime(match['time'], "%Y-%m-%dT%H:%M:%S.%fZ") - cls.EPOCH).total_seconds()
-        isBuy = match['side'] == 'buy'
-        return cls(time, match['trade_id'], float(match['price']), float(match['size']), isBuy)
 
 
 
@@ -116,6 +79,7 @@ class WebSocketClient(WebSocketClientBase):
     ON_DISCONNECTED = object()
     ON_TRADE = object()
     ON_ORDER_BOOK_UPDATE = object()
+    ON_MATCH = object()
 
     def __init__(self):
         url = "wss://ws-feed.gdax.com"
@@ -170,9 +134,9 @@ class WebSocketClient(WebSocketClientBase):
             common.logger.warning("Unknown coinbase websocket msg: " + repr(m))
             return
         if m['type'] == 'match':
-            b = TradeBar.fromCoinbaseMatch(m)
-            #common.logger.info("got trade")
-            self.__queue.put((WebSocketClient.ON_TRADE, b))
+            cbm = CoinbaseMatch(m)
+            self.__queue.put((WebSocketClient.ON_MATCH, cbm))
+            self.__queue.put((WebSocketClient.ON_TRADE, cbm.BasicBar()))
         bms = toBookMessages(m, 'BTCUSD')
         if bms:
             u = MarketUpdate(ts=get_current_datetime(), data=bms)
