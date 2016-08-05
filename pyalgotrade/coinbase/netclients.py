@@ -140,18 +140,22 @@ class CoinbaseAuth(AuthBase):
 #  Coinbase REST client
 # ---------------------------------------------------------------------------
 
-URL = "https://api.exchange.coinbase.com/"
+URL = "https://api.gdax.com/"
+
+from attrdict import AttrDict
+
+CoinbaseOrder = AttrDict
 
 
-CoinbaseOrder = namedtuple('CoinbaseOrder', 'id size price done_reason status settled filled_size executed_value product_id fill_fees side created_at done_at')
-CoinbaseOrder.__new__.__defaults__ = (None,) * len(CoinbaseOrder._fields)
+#CoinbaseOrder = namedtuple('CoinbaseOrder', 'id size price done_reason status settled filled_size executed_value product_id fill_fees side created_at done_at')
+#CoinbaseOrder.__new__.__defaults__ = (None,) * len(CoinbaseOrder._fields)
 
 class CoinbaseRest(object):
 
     def __init__(self, key, secret, passphrase):
         self.__auth = CoinbaseAuth(key, secret, passphrase)
 
-    def auth(self): return CoinbaseAuth()
+    def auth(self): return self.__auth
 
     @property
     @lazy_init
@@ -163,18 +167,22 @@ class CoinbaseRest(object):
     def _request(self, method, url, **kwargs):
         self.ratelimiter.limit()
         result = self._session.request(method, URL + url, **kwargs)
-        result.raise_for_status() # raise if not status == 200
+        try:
+            result.raise_for_status() # raise if not status == 200
+        except Exception:
+            print("ERROR RETURN: " + result.text)
+            raise
         return result
 
     def _auth_request(self, method, url, **kwargs):
         if not 'auth' in kwargs: kwargs['auth'] = self.auth()
         return self._request(method, url, **kwargs)
 
-    def _get(self, url, **kwargs): return self._request('get', url, **kwargs)
+    def _get(self, url, **kwargs): return self._request('GET', url, **kwargs)
     def _getj(self, url, **kwargs): return self._get(url, **kwargs).json()
-    def _auth_getj(self, url, **kwargs): return self._auth_request('get', url, **kwargs).json()
-    def _auth_postj(self, url, **kwargs): return self._auth_request('post', url, **kwargs).json()
-    def _auth_delj(self, url, **kwargs): return self._auth_request('delete', url, **kwargs).json()
+    def _auth_getj(self, url, **kwargs): return self._auth_request('GET', url, **kwargs).json()
+    def _auth_postj(self, url, **kwargs): return self._auth_request('POST', url, **kwargs).json()
+    def _auth_delj(self, url, **kwargs): return self._auth_request('DELETE', url, **kwargs).json()
 
     #
     # Market data (public endpoints)
@@ -234,7 +242,7 @@ class CoinbaseRest(object):
         "done_at": "2014-11-14T06:39:57.605998Z"
     	}
         """
-        return self._auth_getj('orders', id)
+        return self._auth_getj('orders/' + str(id))
 
     def Order(self, id):
         return CoinbaseOrder(**(self.order(id)))
@@ -254,7 +262,7 @@ class CoinbaseRest(object):
             'time_in_force' : order.time_in_force,
             'cancel_after' : order.cancel_after
             }
-        return self._auth_postj('orders', params=params)
+        return self._auth_postj('orders', json=params)
 
     def limitorder(self, side, price, size, symbol=BTCUSD):
         """Place a limit order"""
@@ -265,7 +273,7 @@ class CoinbaseRest(object):
             'price' : price,
             'size' : size
             }
-        return self._auth_postj('orders', params=params)['id']
+        return self._auth_postj('orders', json=params)['id']
 
     def marketorder(self, side, size, symbol=BTCUSD):
         """Place a market order"""
@@ -275,7 +283,7 @@ class CoinbaseRest(object):
             'product_id' : LOCAL_SYMBOL[symbol],
             'size' : size
             }
-        return self._auth_postj('orders', params=params)['id']
+        return self._auth_postj('orders', json=params)['id']
 
     def cancel(self, orderId=None):
         url = 'orders'
