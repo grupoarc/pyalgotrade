@@ -50,6 +50,7 @@ setup(
         'pyalgotrade.websocket',
     ],
     install_requires=[
+        "enum34",
         "numpy",
         "pytz",
         "python-dateutil",
