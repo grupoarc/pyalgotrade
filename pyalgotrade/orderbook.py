@@ -107,7 +107,7 @@ class OrderBook():
         self.last = update
         return self
 
-    def get_marketsnapshot(self):
+    def marketsnapshot(self):
         """Return the OrderBook as a MarketSnapshot"""
         data = self.bids.values() + self.asks.values()
         return MarketSnapshot(time.time(), self.venue, self.symbol, data)

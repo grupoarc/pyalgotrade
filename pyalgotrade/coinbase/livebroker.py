@@ -18,8 +18,6 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
-import threading
-import time
 import Queue
 
 import pyalgotrade.logger
@@ -55,17 +53,13 @@ def build_order_from_open_order(openOrder, instrumentTraits=DEFAULT_TRAITS):
     ret.setSubmitted(openOrder.id, openOrder.created_at)
     if 'done_at' not in openOrder:
         if 'filled_size' in openOrder:
-            print("built order partially filled")
             ret.setState(broker.Order.State.PARTIALLY_FILLED)
         else:
-            print("built order submitted/ACCEPTED")
             ret.setState(broker.Order.State.ACCEPTED)
     elif 'done_reason' == 'canceled':
         ret.setState(broker.Order.State.CANCELED)
-        print("built order canceled")
     else:
         ret.setState(broker.Order.State.FILLED)
-        print("built order filled")
 
     return ret
 
@@ -202,7 +196,6 @@ class LiveBroker(broker.Broker):
         ordersToProcess = self.__activeOrders.values()
         for order in ordersToProcess:
             if order.isSubmitted():
-                print("order submitted/ACCEPTED")
                 order.switchState(broker.Order.State.ACCEPTED)
                 self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.ACCEPTED, None))
                 evented = True
@@ -245,7 +238,6 @@ class LiveBroker(broker.Broker):
 
     def submitOrder(self, order):
         if order.isInitial():
-            print("submitting order")
             # Override user settings based on Bitstamp limitations.
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)

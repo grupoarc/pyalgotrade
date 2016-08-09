@@ -164,7 +164,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             common.logger.error("Error shutting down client: %s" % (str(e)))
 
     def isAlive(self):
-        return self.__thread.isAlive()
+        return self.__thread and self.__thread.isAlive()
 
     # This should not raise.
     def join(self):
