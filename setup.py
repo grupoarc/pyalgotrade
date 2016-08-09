@@ -51,6 +51,8 @@ setup(
     ],
     install_requires=[
         "enum34",
+        "sortedcontainers",
+        "attrdict",
         "numpy",
         "pytz",
         "python-dateutil",

@@ -26,7 +26,7 @@ import Queue
 from pyalgotrade import bar, broker
 from pyalgotrade.websocket.client import WebSocketClientBase
 from pyalgotrade.coinbase import common
-from pyalgotrade.coinbase.book import Book, MarketUpdate
+from pyalgotrade.orderbook import OrderBook, MarketUpdate
 from pyalgotrade.coinbase.streamsync import StreamSynchronizer
 
 from pyalgotrade.coinbase.netclients import toBookMessages
@@ -98,7 +98,7 @@ class WebSocketClient(WebSocketClientBase):
         common.logger.info("Connected; subscribing.")
         subscribe = json.dumps({ "type": "subscribe", "product_id": "BTC-USD" })
         self.send(subscribe)
-        self._book = Book()
+        self._book = OrderBook()
 
         ts_from_stream = lambda m: min(t.rts for t in m.data)
         stream_newer_than_ts = lambda ts, m: m.data and ts_from_stream(m) > ts
@@ -115,8 +115,7 @@ class WebSocketClient(WebSocketClientBase):
 
     def _apply_update(self, u):
         self._book.update(u)
-        b = self._book.OrderBookUpdate()
-        #common.logger.info("updating " + repr(b))
+        b = self._book.marketsnapshot()
         self.__queue.put((WebSocketClient.ON_ORDER_BOOK_UPDATE, b))
 
     def _apply_full(self, syncdata):

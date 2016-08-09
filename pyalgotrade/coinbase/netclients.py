@@ -2,12 +2,10 @@
 from __future__ import print_function
 
 import json, hmac, hashlib, time, requests, base64
-from datetime import datetime
 from decimal import Decimal
-from collections import namedtuple
 
 from requests.auth import AuthBase
-from .book import Increase, Decrease, Ask, Bid, MarketUpdate, Assign, MarketSnapshot
+from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
 
 BTCUSD, BTCEUR = 'BTCUSD', 'BTCEUR'
 
