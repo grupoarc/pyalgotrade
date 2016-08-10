@@ -27,17 +27,16 @@ def fees(txnsize):
 def toBookMessages(coinbase_json, symbol):
     """convert a coinbase json message into a list of book messages"""
     cbase = coinbase_json
-    if type(cbase) != type({}):
+    if type(cbase) != dict:
         cbase = json.loads(cbase)
-    result = []
     cbt = cbase['type']
-    side = { 'buy': Bid, 'sell': Ask }.get(cbase['side'], None)
-    if side is None: raise ValueError("Unknown side %r" % cbase['side'])
     if cbt == 'received':
         return []
     if cbt == 'done' and cbase['order_type'] == 'market':
         return []
-    time, price = cbase['time'], cbase['price']
+    side = { 'buy': Bid, 'sell': Ask }.get(cbase['side'], None)
+    if side is None: raise ValueError("Unknown side %r" % cbase['side'])
+    price = cbase['price']
     if cbt == 'done':
         mtype, size = Decrease, cbase['remaining_size']
     elif cbt == 'open':
@@ -50,21 +49,9 @@ def toBookMessages(coinbase_json, symbol):
         size = Decimal(cbase['old_size']) - Decimal(cbase['new_size'])
     else:
         raise ValueError("Unknown coinbase message: %r" % cbase)
-    #rts = datetime.strptime(time, "%Y-%m-%dT%H:%M:%S.%fZ")
+    #rts = datetime.strptime(cbase['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
     rts = int(cbase['sequence'])
-    result.append(mtype(rts, VENUE, symbol, Decimal(price), Decimal(size), side))
-    return result
-
-
-
-# ---------------------------------------------------------------------------
-#  Coinbase MDC actor - top-level between rest / websocket and hub
-# ---------------------------------------------------------------------------
-
-#def CoinbaseMDC(symbol):
-#    assert symbol in SYMBOLS # Coinbase only supports these symbols
-#    get_syncdata = lambda : CoinbaseRest().book_snapshot(symbol)
-#    return DovetailingMDC(VENUE, symbol, get_syncdata, lambda s: CoinbaseWebsocket(s, symbol))
+    return [mtype(rts, VENUE, symbol, Decimal(price), Decimal(size), side)]
 
 
 # ---------------------------------------------------------------------------
@@ -86,27 +73,6 @@ class lazy_init(object):
             self.val = self.f(*args, **kwargs)
         return self.val
 
-
-class RateLimiter:
-    """
-    a function/method call rate limiter.  Calls to .limit() will block
-    """
-    def __init__(self, calls, secs):
-        """Configure the RateLimiter to only allow _calls_ per _secs_"""
-        self.calls = calls
-        self.secs = secs
-        self.lastcalltime = []
-
-    def limit(self):
-        maybe = self.lastcalltime + [ time.time() ]
-        while maybe[-1] - maybe[0] > self.secs: del maybe[0]
-        if len(maybe) <= self.calls:
-            self.lastcalltime = maybe
-            return
-
-        time.sleep(self.secs - maybe[-1] + maybe[0])
-        self.lastcalltime.append(time.time())
-        return
 
 
 # ---------------------------------------------------------------------------
@@ -161,10 +127,7 @@ class CoinbaseRest(object):
     def _session(self):
         return requests.Session()
 
-    ratelimiter = RateLimiter(5, 1)
-
     def _request(self, method, url, **kwargs):
-        self.ratelimiter.limit()
         result = self._session.request(method, URL + url, **kwargs)
         try:
             result.raise_for_status() # raise if not status == 200
@@ -330,12 +293,4 @@ class CoinbaseRest(object):
         ask = book['asks'][0][0]
         #log.info("Got inside bid: {} ask: {}".format(bid, ask))
         return bid, ask
-
-
-
-#CoinbaseOEC = RESTfulOEC(VENUE,
-#                        CoinbaseRest().limitorder,
-#                        CoinbaseRest().marketorder,
-#                        CoinbaseRest().cancel)
-#
 
