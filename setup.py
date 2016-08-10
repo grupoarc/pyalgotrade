@@ -37,6 +37,7 @@ setup(
         'pyalgotrade.bitcoincharts',
         'pyalgotrade.bitstamp',
         'pyalgotrade.broker',
+        'pyalgotrade.coinbase',
         'pyalgotrade.dataseries',
         'pyalgotrade.feed',
         'pyalgotrade.optimizer',
