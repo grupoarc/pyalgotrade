@@ -22,7 +22,8 @@ import json
 import datetime
 import threading
 import Queue
-from decimal import Decimal
+#from decimal import Decimal
+Decimal=float
 
 from pyalgotrade.websocket import pusher
 from pyalgotrade.bitstamp import common

@@ -99,7 +99,7 @@ class BacktestingBroker(backtesting.Broker):
        side = Bid if action == broker.Order.Action.BUY else Ask
        # where do we get a book?
        totalprice = self.__book.price_for_size(side, quantity)
-       self._check_order(self, action, instrument, quantity, totalprice)
+       self._check_order(action, instrument, quantity, totalprice)
        return super(BacktestingBroker, self).createMarketOrder(action, instrument, quantity, onClose)
 
     def createLimitOrder(self, action, instrument, limitPrice, quantity):
