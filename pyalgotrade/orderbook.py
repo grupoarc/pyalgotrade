@@ -120,7 +120,7 @@ class OrderBook():
     @property
     def inside(self):
         """Return the closest bid and ask PriceLevels"""
-        return Inside(self.inside_bid(), self.inside_ask())
+        return Inside(self.inside_bid, self.inside_ask)
 
     @property
     def inside_bid(self):
