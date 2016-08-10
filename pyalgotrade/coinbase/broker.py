@@ -23,7 +23,7 @@ from pyalgotrade import broker
 from pyalgotrade.broker import backtesting
 from pyalgotrade.coinbase import common
 from pyalgotrade.coinbase import livebroker
-
+from pyalgotrade.orderbook import OrderBook, Bid, Ask
 
 LiveBroker = livebroker.LiveBroker
 
@@ -55,6 +55,8 @@ class BacktestingBroker(backtesting.Broker):
     def __init__(self, cash, barFeed, fee=0.0025):
         commission = backtesting.TradePercentage(fee)
         super(BacktestingBroker, self).__init__(cash, barFeed, commission)
+        self.__book = OrderBook()
+        barFeed.getOrderBookUpdateEvent().subscribe(self.__book.update)
 
     def getInstrumentTraits(self, instrument):
         return common.BTCTraits()
@@ -72,6 +74,7 @@ class BacktestingBroker(backtesting.Broker):
         if totalprice < BacktestingBroker.MIN_TRADE_USD:
             raise Exception("Trade must be >= %s" % (BacktestingBroker.MIN_TRADE_USD))
         if action == broker.Order.Action.BUY:
+            if totalprice is None: return
             if totalprice > self.getCash(False):
                 raise Exception("Not enough cash")
         elif action == broker.Order.Action.SELL:
@@ -82,10 +85,10 @@ class BacktestingBroker(backtesting.Broker):
 
     def _remap_action(self, action):
         action = {
-            broker.Order.Action.BUY_TO_COVER: broker.Order.action.BUY,
-            broker.Order.Action.BUY:          broker.Order.action.BUY,
-            broker.Order.Action.SELL_SHORT:   broker.Order.action.SELL,
-            broker.Order.Action.SELL:         broker.Order.action.SELL
+            broker.Order.Action.BUY_TO_COVER: broker.Order.Action.BUY,
+            broker.Order.Action.BUY:          broker.Order.Action.BUY,
+            broker.Order.Action.SELL_SHORT:   broker.Order.Action.SELL,
+            broker.Order.Action.SELL:         broker.Order.Action.SELL
         }.get(action, None)
         if action is None:
             raise Exception("Only BUY/SELL orders are supported")
@@ -93,9 +96,10 @@ class BacktestingBroker(backtesting.Broker):
 
     def createMarketOrder(self, action, instrument, quantity, onClose=False):
        action = self._remap_action(action)
-       side = 'bid' if action == broker.Order.Action.BUY else "ask"
+       side = Bid if action == broker.Order.Action.BUY else Ask
        # where do we get a book?
-       self._check_order(self, action, instrument, quantity, book.price_for_size(side, quantity))
+       totalprice = self.__book.price_for_size(side, quantity)
+       self._check_order(self, action, instrument, quantity, totalprice)
        return super(BacktestingBroker, self).createMarketOrder(action, instrument, quantity, onClose)
 
     def createLimitOrder(self, action, instrument, limitPrice, quantity):
