@@ -243,9 +243,14 @@ class LiveBroker(broker.Broker):
             order.setGoodTillCanceled(True)
 
             side = "buy" if order.isBuy() else "sell"
-            price = order.getLimitPrice()
-            size =order.getQuantity()
-            newOrderId = self.__httpClient.limitorder(side, price, size)
+            size = order.getQuantity()
+            if order.getType() == order.Type.LIMIT:
+                price = order.getLimitPrice()
+                newOrderId = self.__httpClient.limitorder(side, price, size)
+            elif order.getType() == order.Type.MARKET:
+                newOrderId = self.__httpClient.marketorder(side, size)
+            else:
+                raise Exception("Coinbase only does LIMIT and MARKET orders")
             newOrder = self.__httpClient.Order(newOrderId)
 
             order.setSubmitted(newOrderId, newOrder.created_at)
