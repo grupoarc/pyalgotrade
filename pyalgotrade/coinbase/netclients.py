@@ -2,8 +2,8 @@
 from __future__ import print_function
 
 import json, hmac, hashlib, time, requests, base64
-#from decimal import Decimal
-Decimal=float
+from decimal import Decimal
+#Decimal=float
 
 from requests.auth import AuthBase
 from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot

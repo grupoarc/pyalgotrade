@@ -4,7 +4,7 @@ PYTHON=python
 TEST_TIMEOUT=600
 TEST_DIR=testcases
 
-TEST_DEPS=pytest pytest-cov pytest-timeout scipy matplotlib ws4py tornado tweepy enum34 sortedcontainers
+TEST_DEPS=pytest pytest-cov pytest-timeout scipy matplotlib ws4py tornado tweepy enum34 sortedcontainers attrdict simplejson
 
 default:
 	@echo "Try one of:"
