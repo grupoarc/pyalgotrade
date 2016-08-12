@@ -2,8 +2,6 @@
 from __future__ import print_function
 
 import json, hmac, hashlib, time, requests, base64
-from decimal import Decimal
-#Decimal=float
 
 from requests.auth import AuthBase
 from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
@@ -16,8 +14,12 @@ SYMBOLS = list(LOCAL_SYMBOL.keys())
 VENUE = 'coinbase'
 
 
+def flmath(n):
+    return round(n, 12)
+
 def fees(txnsize):
-    return txnsize * Decimal('0.0025')
+    return flmath(txnsize * float('0.0025'))
+
 
 # ---------------------------------------------------------------------------
 #  Coinbase market data message helper / decoder
@@ -46,12 +48,12 @@ def toBookMessages(coinbase_json, symbol):
     elif cbt == 'change':
         if price == 'null': return []
         mtype = Decrease
-        size = Decimal(cbase['old_size']) - Decimal(cbase['new_size'])
+        size = flmath(float(cbase['old_size']) - float(cbase['new_size']), 15)
     else:
         raise ValueError("Unknown coinbase message: %r" % cbase)
     #rts = datetime.strptime(cbase['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
     rts = int(cbase['sequence'])
-    return [mtype(rts, VENUE, symbol, Decimal(price), Decimal(size), side)]
+    return [mtype(rts, VENUE, symbol, float(price), float(size), side)]
 
 
 # ---------------------------------------------------------------------------
@@ -280,8 +282,8 @@ class CoinbaseRest(object):
         def mkassign(ts, price, size, side):
             return Assign(ts, VENUE, symbol, price, size, side)
         rts = book['sequence']
-        price = lambda e: Decimal(e[0])
-        size = lambda e: Decimal(e[1])
+        price = lambda e: float(e[0])
+        size = lambda e: float(e[1])
         return MarketSnapshot(time.time(), VENUE, symbol,
             [ mkassign(rts, price(e), size(e), Bid) for e in book['bids'] ] +
             [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]

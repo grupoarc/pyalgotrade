@@ -15,8 +15,14 @@ def fixup_decimal(d):
     d = Decimal(d)
     return d.quantize(Decimal(1)) if d == d.to_integral() else d.normalize()
 
+def fixup_float(f):
+    if float(f) - int(f) == 0: return int(f)
+    return round(float(f), 12)
+
+fixup = fixup_decimal
+
 def normalize_side(side):
-    newside = [ [fixup_decimal(pl.price), fixup_decimal(pl.size)] for pl in side ]
+    newside = [ [fixup(pl.price), fixup(pl.size)] for pl in side ]
     return newside
 
 @pytest.mark.parametrize("sessionfilename", [

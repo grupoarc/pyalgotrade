@@ -8,6 +8,7 @@ from enum import Enum
 from collections import namedtuple
 from sortedcontainers import SortedDict
 
+flmath = lambda n: round(n, 12)
 
 class Side(Enum):
     Bid = 1
@@ -100,8 +101,8 @@ class OrderBook():
             if s is None: raise ValueError("Unknown side: %r" % t.side)
             tp, ts = t.price, t.size
             if   tt == Assign:   s_pl(s, t)
-            elif tt == Increase: s_pl(s, mk_a(t, size=g_sz(s, tp) + ts))
-            elif tt == Decrease: s_pl(s, mk_a(t, size=g_sz(s, tp) - ts))
+            elif tt == Increase: s_pl(s, mk_a(t, size=flmath(g_sz(s, tp) + ts)))
+            elif tt == Decrease: s_pl(s, mk_a(t, size=flmath(g_sz(s, tp) - ts)))
             else: raise ValueError("Unknown type %r of %r" % (type(t), t))
 
         self.last = update
@@ -162,6 +163,7 @@ class OrderBook():
             s = min(sizeleft, pl.size)
             value += s * price
             sizeleft -= s
+            value, sizeleft = flmath(value), flmath(sizeleft)
             if not sizeleft: break
         return value
 
@@ -187,8 +189,9 @@ class OrderBook():
             else:
                 size += priceleft / price
                 break
+            size, priceleft = flmath(size), flmath(priceleft)
         return size
 
     def nsfp(self, price):
         """Normalized Size For Price"""
-        return self.size_for_price(Bid, price)/self.size_for_price(Ask, price)
+        return flmath(self.size_for_price(Bid, price)/self.size_for_price(Ask, price))
