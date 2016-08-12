@@ -17,10 +17,7 @@
 # limitations under the License.
 
 
-try:
-    from setuptools import setup
-except ImportError:
-    from distutils.core import setup
+from setuptools import setup, find_packages
 
 setup(
     name='PyAlgoTrade',
@@ -31,25 +28,7 @@ setup(
     author_email='pyalgotrade@gmail.com',
     url='http://gbeced.github.io/pyalgotrade/',
     download_url='http://sourceforge.net/projects/pyalgotrade/files/0.17/PyAlgoTrade-0.17.tar.gz/download',
-    packages=[
-        'pyalgotrade',
-        'pyalgotrade.barfeed',
-        'pyalgotrade.bitcoincharts',
-        'pyalgotrade.bitstamp',
-        'pyalgotrade.broker',
-        'pyalgotrade.coinbase',
-        'pyalgotrade.dataseries',
-        'pyalgotrade.feed',
-        'pyalgotrade.optimizer',
-        'pyalgotrade.stratanalyzer',
-        'pyalgotrade.strategy',
-        'pyalgotrade.talibext',
-        'pyalgotrade.technical',
-        'pyalgotrade.tools',
-        'pyalgotrade.twitter',
-        'pyalgotrade.utils',
-        'pyalgotrade.websocket',
-    ],
+    packages=find_packages(exclude=['testcases']),
     install_requires=[
         "enum34",
         "sortedcontainers",
