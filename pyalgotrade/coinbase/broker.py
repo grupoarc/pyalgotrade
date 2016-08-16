@@ -18,7 +18,10 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
+import threading
+from datetime import datetime
 
+from pyalgotrade import bar
 from pyalgotrade import broker
 from pyalgotrade.broker import backtesting
 from pyalgotrade.coinbase import common
@@ -57,6 +60,7 @@ class BacktestingBroker(backtesting.Broker):
         super(BacktestingBroker, self).__init__(cash, barFeed, commission)
         self.__book = OrderBook()
         barFeed.getOrderBookUpdateEvent().subscribe(self.__book.update)
+        self.__barFeed = barFeed
 
     def getInstrumentTraits(self, instrument):
         return common.BTCTraits()
@@ -66,7 +70,26 @@ class BacktestingBroker(backtesting.Broker):
             # Override user settings based on Bitstamp limitations.
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)
+
+        threading.Timer(1, self._simulateTrade, args=[order]).start()
+
         return super(BacktestingBroker, self).submitOrder(order)
+
+    def _simulateTrade(self, order):
+        bars = self._fakeBarsForOrder(order)
+        self.__barFeed.getNewValuesEvent().emit(bars.getDateTime(), bars)
+
+    def _fakeBarsForOrder(self, order):
+        volume = order.getQuantity()
+        if order.getAction() in [ broker.Order.Action.BUY, broker.Order.Action.BUY_TO_COVER ]:
+            side = Ask
+        else:
+            side = Bid
+        open_ = high = low = close = self.__book.price_for_size(side, volume) / volume
+        adjClose = None
+        freq = bar.Frequency.TRADE
+        time = datetime.now()
+        return bar.Bars({'BTC':bar.BasicBar(time, open_, high, low, close, volume, adjClose, freq)})
 
     def _check_order(self, action, instrument, quantity, totalprice):
         if instrument != common.btc_symbol:
