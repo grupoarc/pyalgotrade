@@ -38,6 +38,7 @@ def toBookMessages(coinbase_json, symbol):
         return []
     side = { 'buy': Bid, 'sell': Ask }.get(cbase['side'], None)
     if side is None: raise ValueError("Unknown side %r" % cbase['side'])
+    if not 'price' in cbase: return [] #change of a market order
     price = cbase['price']
     if cbt == 'done':
         mtype, size = Decrease, cbase['remaining_size']
@@ -48,7 +49,7 @@ def toBookMessages(coinbase_json, symbol):
     elif cbt == 'change':
         if price == 'null': return []
         mtype = Decrease
-        size = flmath(float(cbase['old_size']) - float(cbase['new_size']), 15)
+        size = flmath(float(cbase['old_size']) - float(cbase['new_size']))
     else:
         raise ValueError("Unknown coinbase message: %r" % cbase)
     #rts = datetime.strptime(cbase['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
