@@ -77,6 +77,7 @@ class BacktestingBroker(backtesting.Broker):
 
     def _simulateTrade(self, order):
         bars = self._fakeBarsForOrder(order)
+        if not bars: return
         self.__barFeed.getNewValuesEvent().emit(bars.getDateTime(), bars)
 
     def _fakeBarsForOrder(self, order):
@@ -86,6 +87,7 @@ class BacktestingBroker(backtesting.Broker):
         else:
             side = Bid
         open_ = high = low = close = self.__book.price_for_size(side, volume) / volume
+        if not high: return
         adjClose = None
         freq = bar.Frequency.TRADE
         time = datetime.now()
