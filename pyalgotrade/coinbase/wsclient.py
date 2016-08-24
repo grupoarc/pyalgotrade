@@ -37,6 +37,21 @@ def get_current_datetime():
 
 EPOCH = datetime(1970,1,1)
 
+
+class TradeBar(bar.BasicBar):
+
+    UP = 'UP'
+    DOWN = 'DOWN'
+
+    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
+        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
+        self.__direction = direction
+
+    def getDirection(self):
+        return self.__direction
+
+
+
 class CoinbaseMatch(object):
 
     def __init__(self, json):
@@ -57,12 +72,13 @@ class CoinbaseMatch(object):
             if oid in oidlist: return oid
         return None
 
-    def BasicBar(self):
+    def TradeBar(self):
         open_ = high = low = close = self.price
         volume = self.size
         adjClose = None
         freq = bar.Frequency.TRADE
-        return bar.BasicBar(self.time, open_, high, low, close, volume, adjClose, freq)
+        dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
+        return TradeBar(self.time, open_, high, low, close, volume, adjClose, freq, dir_)
 
     def OrderExecutionInfo(self):
         fee = self.price * self.size * 0.0025 # FIXME FIXME FIXME
@@ -135,7 +151,7 @@ class WebSocketClient(WebSocketClientBase):
         if m['type'] == 'match':
             cbm = CoinbaseMatch(m)
             self.__queue.put((WebSocketClient.ON_MATCH, cbm))
-            self.__queue.put((WebSocketClient.ON_TRADE, cbm.BasicBar()))
+            self.__queue.put((WebSocketClient.ON_TRADE, cbm.TradeBar()))
         bms = toBookMessages(m, 'BTCUSD')
         if bms:
             u = MarketUpdate(ts=get_current_datetime(), data=bms)
