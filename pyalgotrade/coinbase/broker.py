@@ -23,7 +23,7 @@ from datetime import datetime
 
 from pyalgotrade import bar
 from pyalgotrade import broker
-from pyalgotrade.broker import backtesting
+from pyalgotrade.broker import backtesting, MarketOrder
 from pyalgotrade.coinbase import common
 from pyalgotrade.coinbase import livebroker
 from pyalgotrade.orderbook import OrderBook, Bid, Ask
@@ -37,6 +37,12 @@ LiveBroker = livebroker.LiveBroker
 # It is guaranteed to process BarFeed events before the strategy because it connects to BarFeed events before the
 # strategy.
 
+class CoinbaseFees(backtesting.Commission):
+
+    def calculate(self, order, price, quantity):
+        if type(order) == MarketOrder:
+            return 0.0025 * price * quantity
+        return 0
 
 class BacktestingBroker(backtesting.Broker):
     MIN_TRADE_USD = 5
@@ -57,12 +63,13 @@ class BacktestingBroker(backtesting.Broker):
         * SELL_SHORT orders are mapped to SELL orders.
     """
 
-    def __init__(self, cash, barFeed, fee=0.0025):
-        commission = backtesting.TradePercentage(fee)
+    def __init__(self, cash, barFeed):
+        commission = CoinbaseFees()
         super(BacktestingBroker, self).__init__(cash, barFeed, commission)
         self.__book = OrderBook()
         barFeed.getOrderBookUpdateEvent().subscribe(self.__book.update)
         self.__barFeed = barFeed
+        self._Broker__shares['BTC'] = cash
 
     def getInstrumentTraits(self, instrument):
         return common.BTCTraits()
