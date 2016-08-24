@@ -28,6 +28,8 @@ from pyalgotrade.coinbase import common
 from pyalgotrade.coinbase import livebroker
 from pyalgotrade.orderbook import OrderBook, Bid, Ask
 
+from pyalgotrade.coinbase.wsclient import TradeBar
+
 LiveBroker = livebroker.LiveBroker
 
 # In a backtesting or paper-trading scenario the BacktestingBroker dispatches events while processing events from the
@@ -83,15 +85,16 @@ class BacktestingBroker(backtesting.Broker):
     def _fakeBarsForOrder(self, order):
         volume = order.getQuantity()
         if order.getAction() in [ broker.Order.Action.BUY, broker.Order.Action.BUY_TO_COVER ]:
-            side = Ask
+            side, dir_ = Ask, TradeBar.UP
         else:
-            side = Bid
+            side, dir_ = Bid, TradeBar.DOWN
         open_ = high = low = close = self.__book.price_for_size(side, volume) / volume
         if not high: return
         adjClose = None
         freq = bar.Frequency.TRADE
         time = datetime.now()
-        return bar.Bars({'BTC':bar.BasicBar(time, open_, high, low, close, volume, adjClose, freq)})
+        fakebar = TradeBar(time, open_, high, low, close, volume, adjClose, freq, dir_)
+        return bar.Bars({'BTC':fakebar})
 
     def _check_order(self, action, instrument, quantity, totalprice):
         if instrument != common.btc_symbol:
