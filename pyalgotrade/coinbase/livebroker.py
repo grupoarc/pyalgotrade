@@ -152,12 +152,17 @@ class LiveBroker(broker.Broker):
         self.__tradeMonitor.start()
         self.__stop = False  # No errors. Keep running.
 
+    def __fees(self, order, match):
+        if type(order) == broker.LimitOrder: return 0
+        return 0.0025 * match.price * match.size
+
     def _onUserTrade(self, match):
         oid = match.involves(self.__activeOrders.keys())
         order = self.__activeOrders.get(oid, None)
         if order is not None:
             self.refreshAccountBalance()
-            oei = match.OrderExecutionInfo()
+            fee = self.__fees(order, match)
+            oei = broker.OrderExecutionInfo(match.price, match.size, fee, match.time)
             order.addExecutionInfo(oei)
             # order updated, do housekeeping
             if not order.isActive():

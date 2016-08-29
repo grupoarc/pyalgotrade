@@ -23,7 +23,7 @@ from datetime import datetime
 import threading
 import Queue
 
-from pyalgotrade import bar, broker
+from pyalgotrade import bar
 from pyalgotrade.websocket.client import WebSocketClientBase
 from pyalgotrade.coinbase import common
 from pyalgotrade.orderbook import OrderBook, MarketUpdate
@@ -79,13 +79,6 @@ class CoinbaseMatch(object):
         freq = bar.Frequency.TRADE
         dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
         return TradeBar(self.time, open_, high, low, close, volume, adjClose, freq, dir_)
-
-    def OrderExecutionInfo(self):
-        fee = self.price * self.size * 0.0025 # FIXME FIXME FIXME
-
-        return broker.OrderExecutionInfo(self.price, self.size, fee, self.time)
-
-
 
 
 class WebSocketClient(WebSocketClientBase):
