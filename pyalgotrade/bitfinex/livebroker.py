@@ -110,8 +110,6 @@ class LiveBroker(broker.Broker):
     :type key: string.
     :param secret: API secret.
     :type secret: string.
-    :param passphrase: API passphrase.
-    :type passphrase: string.
 
 
     .. note::
@@ -131,7 +129,7 @@ class LiveBroker(broker.Broker):
 
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(self, key, secret, passphrase):
+    def __init__(self, key, secret):
         super(LiveBroker, self).__init__()
         self.__stop = False
         self.__httpClient = self.buildHTTPClient(key, secret)
