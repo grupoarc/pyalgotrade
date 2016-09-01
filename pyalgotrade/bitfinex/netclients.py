@@ -53,98 +53,6 @@ def toMarketMessage(msg, symbol):
     else: mtype = MarketUpdate
     return mtype(data=toBookMessages(msg, symbol), **tvs)
 
-
-def BitfinexStreamRaw(target, symbol, channel, subscribe={}, raw=False):
-    """
-    A Bitfinex Live-streaming client
-
-    target - actor to .send() messages to
-    """
-
-    assert symbol in SYMBOLS
-
-    log = STSDLogger(__name__).lognow
-    #log = print
-
-    streams = {}
-
-    subscribed = subscribe.copy()
-    subscribed.update({'event': 'subscribe',
-                       'channel': channel,
-                       'pair':LOCAL_SYMBOL[symbol],
-                       })
-
-    subscribemsg = json.dumps(subscribed)
-
-    def on_open(socket):
-        log("CONNECTED")
-        socket.send(subscribemsg)
-
-    def on_error(socket, exception):
-        log("BitfinexStream error: %r" % exception, file=sys.stderr)
-
-    def on_message(socket, msg):
-        m = json.loads(msg, parse_float=Decimal)
-        if type(m) == type({}):
-            # handle info msgs
-            if m['event'] == 'info':
-                return
-            elif m['event'] == 'subscribed':
-                chan = m['chanId']
-                streams[chan] = m
-                return
-        elif type(m) == type([]):
-            if len(m) == 2 and m[1] == 'hb': return # skip heartbeats
-            chan, contents = m[0], m[1:]
-            if not chan in streams:
-                log("Reply on unknown stream '{}': {!r}".format(chan, contents))
-                log("we only know about {!r}".format(', '.join(streams.keys())))
-                return
-            if streams[chan]["channel"] == "book" and not raw:
-                target.send(toMarketMessage(contents, symbol))
-                return
-            target.send(msg)
-            return
-        log("Unknown message: {!r}".format(m))
-
-    def loop():
-        log("Starting Actor")
-        ws.run_forever()
-
-    # websocket.enableTrace(True)
-    WS_ADDR = "wss://api2.bitfinex.com:3000/ws"
-    ws = websocket.WebSocketApp(WS_ADDR, on_message=on_message, on_open=on_open)
-    log("Factoried")
-    return loop
-
-
-
-def BitfinexStream(target, symbol):
-    details = {'prec': 'P0',
-               'freq': 'F0',
-               'len' : '100' # 100 pricelevels
-              }
-    return BitfinexStreamRaw(target, symbol, 'book', subscribe=details)
-
-
-def BitfinexRawTicks(target, symbol):
-    details = {'prec': 'P0',
-               'freq': 'F0',
-               'len' : '100' # 100 pricelevels
-              }
-    return BitfinexStreamRaw(target, symbol, 'book', subscribe=details, raw=True)
-
-
-def BitfinexRawTrades(target, symbol):
-    return BitfinexStreamRaw(target, symbol, 'trades', raw=True)
-
-
-def BitfinexMDC(symbol):
-    stream = lambda s: BitfinexStream(s, symbol)
-    update = lambda m: m
-    return UpdatingMDC(VENUE, symbol, stream, update)
-
-
 class lazy_init(object):
     """
     A decorator for single, lazy, initialization of (usually) a property
@@ -162,9 +70,9 @@ class lazy_init(object):
 
 def singleton(cls):
     instances = {}
-    def getinstance():
+    def getinstance(*args, **kwargs):
         if cls not in instances:
-            instances[cls] = cls()
+            instances[cls] = cls(*args, **kwargs)
         return instances[cls]
     return getinstance
 
