@@ -3,6 +3,7 @@ from __future__ import print_function
 
 import sys
 import time
+import urlparse
 import posixpath
 import json
 from decimal import Decimal
@@ -81,26 +82,34 @@ def singleton(cls):
 # Bitfinex auth module
 class BitfinexAuth(AuthBase):
     """a requests-module-compatible auth module"""
-    def __init__(self, api_key, api_secret):
-        self.api_key    = api_key
-        self.api_secret = api_secret
+    def __init__(self):
+        from .secrets import bitfinex as b
+        self.api_key    = b.api_key
+        self.api_secret = b.api_secret
 
     def __call__(self, request):
+        nonce = str(int(time.time()* 100))
         payload =  { 'request': request.path_url,
-                     'nonce': str(time.time()),
+                     'nonce': nonce,
                     }
-        payload.update(request.data)
-        payload = json.dumps(payload).encode('base64').rstrip('\n')
-        signature = hmac.new(self.api_secret, payload, hashlib.sha384).hexdigest()
 
-        if request.data: request.data = payload
+        if request.body:
+            data = urlparse.parse_qs(request.body)
+            for k in data:
+                payload[k] = data[k][0]
+
+        payload = json.dumps(payload).encode('base64').rstrip('\n')
+
+        signature = hmac.new(self.api_secret, payload, hashlib.sha384).hexdigest()
 
         request.headers.update({
             'X-BFX-APIKEY': self.api_key,
             'X-BFX-PAYLOAD': payload,
             'X-BFX-SIGNATURE': signature
         })
+        request.body = payload
         return request
+
 
 URL='https://api.bitfinex.com/v1'
 
