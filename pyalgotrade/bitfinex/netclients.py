@@ -82,10 +82,9 @@ def singleton(cls):
 # Bitfinex auth module
 class BitfinexAuth(AuthBase):
     """a requests-module-compatible auth module"""
-    def __init__(self):
-        from .secrets import bitfinex as b
-        self.api_key    = b.api_key
-        self.api_secret = b.api_secret
+    def __init__(self, api_key, api_secret):
+        self.api_key    = api_key
+        self.api_secret = api_secret
 
     def __call__(self, request):
         nonce = str(int(time.time()* 100))
