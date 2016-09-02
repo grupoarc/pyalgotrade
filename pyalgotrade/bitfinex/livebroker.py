@@ -69,13 +69,16 @@ class TradeMonitor(threading.Thread):
         self.__running = True
 
     def _getNewTrades(self):
-        trades = self.__httpClient.orders()
-        if trades: return []
+        trades = self.__httpClient.mytrades()
+        latest_ts = lambda ts: max(float(t.timestamp) for t in ts)
         if self.__lastTradeAt is None:
-            self.__lastTradeAt = max(trades, key=lambda k: k['created_at'])
-        else:
-            trades = [ t for t in trades if t['created_at'] > self.__lastTradeAt ]
-        return trades
+            if not trades: return []
+            self.__lastTradeAt = latest_ts(trades)
+            return []
+        newtrades = [ t for t in trades if float(t.timestamp) > self.__lastTradeAt ]
+        if newtrades:
+            self.__lastTradeAt = latest_ts(newtrades)
+        return newtrades
 
     def getQueue(self):
         return self.__queue
@@ -84,7 +87,7 @@ class TradeMonitor(threading.Thread):
         trades = self._getNewTrades()
         # Store the last trade id since we'll start processing new ones only.
         if len(trades):
-            logger.info("Last trade found: %d" % (self.__lastTradeId))
+            logger.info("Last trade found at: %d" % (self.__lastTradeAt))
         super(TradeMonitor, self).start()
 
     def run(self):
@@ -173,7 +176,7 @@ class LiveBroker(broker.Broker):
     def refreshOpenOrders(self):
         self.__stop = True  # Stop running in case of errors.
         logger.info("Retrieving open orders.")
-        openOrders = self.__httpClient.Orders(['open', 'pending', 'active'])
+        openOrders = self.__httpClient.Orders()
         for openOrder in openOrders:
             self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(btc_symbol)))
 
@@ -188,17 +191,18 @@ class LiveBroker(broker.Broker):
 
     def _onUserTrades(self, trades):
         for trade in trades:
-            order = self.__activeOrders.get(trade.getOrderId())
+            order = self.__activeOrders.get(trade.order_id)
             if order is not None:
-                fee = trade.getFee()
-                fillPrice = trade.getBTCUSD()
-                btcAmount = trade.getBTC()
-                dateTime = trade.getDateTime()
+                fillPrice = float(trade.price)
+                btcAmount = float(trade.amount)
+                dateTime = float(trade.timestamp)
+                fee = abs(float(trade.fee_amount))
+                if trade.fee_currency != 'USD': fee *= fillPrice
 
                 # Update cash and shares.
                 self.refreshAccountBalance()
                 # Update the order.
-                orderExecutionInfo = broker.OrderExecutionInfo(fillPrice, abs(btcAmount), fee, dateTime)
+                orderExecutionInfo = broker.OrderExecutionInfo(fillPrice, btcAmount, fee, dateTime)
                 order.addExecutionInfo(orderExecutionInfo)
                 if not order.isActive():
                     self._unregisterOrder(order)
@@ -209,7 +213,7 @@ class LiveBroker(broker.Broker):
                     eventType = broker.OrderEvent.Type.PARTIALLY_FILLED
                 self.notifyOrderEvent(broker.OrderEvent(order, eventType, orderExecutionInfo))
             else:
-                logger.info("Trade %d refered to order %d that is not active" % (trade.getId(), trade.getOrderId()))
+                logger.info("Trade %d refered to order %d that is not active" % (trade.tid, trade.order_id))
 
     # BEGIN observer.Subject interface
     def start(self):
@@ -298,10 +302,10 @@ class LiveBroker(broker.Broker):
             raise Exception("Only BTC instrument is supported")
 
         action = {
-            broker.Order.Action.BUY_TO_COVER: broker.Order.action.BUY,
-            broker.Order.Action.BUY:          broker.Order.action.BUY,
-            broker.Order.Action.SELL_SHORT:   broker.Order.action.SELL,
-            broker.Order.Action.SELL:         broker.Order.action.SELL
+            broker.Order.Action.BUY_TO_COVER: broker.Order.Action.BUY,
+            broker.Order.Action.BUY:          broker.Order.Action.BUY,
+            broker.Order.Action.SELL_SHORT:   broker.Order.Action.SELL,
+            broker.Order.Action.SELL:         broker.Order.Action.SELL
         }.get(action, None)
         if action is None:
             raise Exception("Only BUY/SELL orders are supported")

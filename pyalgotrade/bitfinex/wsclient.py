@@ -26,7 +26,7 @@ import Queue
 from pyalgotrade import bar
 from pyalgotrade.websocket.client import WebSocketClientBase
 from pyalgotrade.bitfinex import common
-from pyalgotrade.bitfinex.book import Book, MarketUpdate
+from pyalgotrade.orderbook import OrderBook
 
 from pyalgotrade.bitfinex.netclients import toMarketMessage
 
@@ -34,93 +34,17 @@ from pyalgotrade.bitfinex.netclients import toMarketMessage
 def get_current_datetime():
     return datetime.now()
 
+class TradeBar(bar.BasicBar):
 
-class TradeBar(bar.Bar):
-    # Optimization to reduce memory footprint.
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount', '__buy')
+    UP = 'UP'
+    DOWN = 'DOWN'
 
-    def __init__(self, dateTime, tradeId, price, amount, isBuy):
-        self.__dateTime = dateTime
-        self.__tradeId = tradeId
-        self.__price = price
-        self.__amount = amount
-        self.__buy = isBuy
+    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
+        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
+        self.__direction = direction
 
-    def __setstate__(self, state):
-        (self.__dateTime, self.__tradeId, self.__price, self.__amount, self.__buy) = state
-
-    def __getstate__(self):
-        return (self.__dateTime, self.__tradeId, self.__price, self.__amount, self.__buy)
-
-    def setUseAdjustedValue(self, useAdjusted):
-        if useAdjusted:
-            raise Exception("Adjusted close is not available")
-
-    def getTradeId(self):
-        return self.__tradeId
-
-    def getFrequency(self):
-        return bar.Frequency.TRADE
-
-    def getDateTime(self):
-        return self.__dateTime
-
-    def setDateTime(self, value):
-        self.__dateTime = value
-
-    def getOpen(self, adjusted=False):
-        return self.__price
-
-    def getHigh(self, adjusted=False):
-        return self.__price
-
-    def getLow(self, adjusted=False):
-        return self.__price
-
-    def getClose(self, adjusted=False):
-        return self.__price
-
-    def getVolume(self):
-        return self.__amount
-
-    def getAdjClose(self):
-        return None
-
-    def getTypicalPrice(self):
-        return self.__price
-
-    def getPrice(self):
-        return self.__price
-
-    def getUseAdjValue(self):
-        return False
-
-    def isBuy(self):
-        return self.__buy
-
-    def isSell(self):
-        return not self.__buy
-
-    EPOCH = datetime(1970,1,1)
-
-    @classmethod
-    def fromCoinbaseMatch(cls, match):
-        time = (datetime.strptime(match['time'], "%Y-%m-%dT%H:%M:%S.%fZ") - cls.EPOCH).total_seconds()
-        isBuy = match['side'] == 'buy'
-        return cls(time, match['trade_id'], float(match['price']), float(match['size']), isBuy)
-
-    @classmethod
-    def fromBitfinexTrade(cls, t):
-        ttype = t[0]
-        if ttype == 'te':
-            seq, timestamp, price, size = t[1:]
-        elif ttype == 'tu':
-            seq, tid, timestamp, price, size = t[1:]
-        else:
-            common.logger.error("unknown bitfinex trade type: " + repr(t))
-            raise SyntaxError("unknown bitfinex trade type: " + repr(t))
-        size = float(size)
-        return cls(float(timestamp), tid, float(price), abs(size), size>0)
+    def getDirection(self):
+        return self.__direction
 
 
 class WebSocketClient(WebSocketClientBase):
@@ -135,7 +59,7 @@ class WebSocketClient(WebSocketClientBase):
         url = "wss://api2.bitfinex.com:3000/ws"
         super(WebSocketClient, self).__init__(url)
         self.__queue = Queue.Queue()
-        self._book = Book("bitfinex", "BTCUSD")
+        self._book = OrderBook("bitfinex", "BTCUSD")
         self._channel = {}
         self.__lastTradeTime = 0.0
 
@@ -183,19 +107,28 @@ class WebSocketClient(WebSocketClientBase):
                 self.__queue.put((WebSocketClient.ON_TRADE, b))
             elif chan == 'book':
                 self._book.update(toMarketMessage(contents, 'BTCUSD'))
-                b = self._book.OrderBookUpdate()
+                b = self._book.marketsnapshot()
                 #common.logger.info("updating " + repr(b))
                 self.__queue.put((WebSocketClient.ON_ORDER_BOOK_UPDATE, b))
 
     def _getTradeBar(self, contents):
+        ttype = contents[0]
+        if ttype == 'te':
+            seq, timestamp, price, size = contents[1:]
+        elif ttype == 'tu':
+            seq, tid, timestamp, price, size = contents[1:]
+        else:
+            common.logger.error("unknown bitfinex trade type: " + repr(contents))
+            raise SyntaxError("unknown bitfinex trade type: " + repr(contents))
+        size, price, ts = float(size), float(price), float(timestamp)
+        open_ = high = low = close = price
+        freq = bar.Frequency.TRADE
+        direction = TradeBar.DOWN if size>0 else TradeBar.UP
         # hackery to make datetime be monotonic
-        b = TradeBar.fromBitfinexTrade(contents)
-        if b.getDateTime() <= self.__lastTradeTime:
-            state = list(b.__getstate__())
-            state[0] = self.__lastTradeTime + 0.001
-            b.__setstate__(state)
-        self.__lastTradeTime = b.getDateTime()
-        return b
+        if ts <= self.__lastTradeTime:
+            ts = self.__lastTradeTime + 0.001
+        self.__lastTradeTime = ts
+        return TradeBar(ts, open_, high, low, close, abs(size), close, freq, direction)
 
     def onClosed(self, code, reason):
         common.logger.info("Closed. Code: %s. Reason: %s." % (code, reason))
