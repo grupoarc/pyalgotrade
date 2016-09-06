@@ -2,12 +2,10 @@
 from __future__ import print_function
 
 import time
-import urlparse
 import posixpath
 import json
 from decimal import Decimal
 import hmac, hashlib, requests
-from collections import namedtuple
 
 from requests.auth import AuthBase
 
@@ -39,8 +37,9 @@ def toBookMessages(msg, symbol):
     now = time.time()
     if len(msg) > 1:
         msg = [[ msg ]]
-    for price, _, size  in msg[0]:
+    for price, count, size  in msg[0]:
         side = Bid if size > 0 else Ask
+        if count == 0: size = 0
         result.append(Assign(now, VENUE, symbol, price, abs(size), side))
     return result
 
