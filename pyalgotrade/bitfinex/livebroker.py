@@ -160,18 +160,16 @@ class LiveBroker(broker.Broker):
         """Refreshes cash and BTC balance."""
 
         self.__stop = True  # Stop running in case of errors.
-        logger.info("Retrieving account balance.")
         balance = self.__httpClient.balances()
 
         # Cash
         usd = float(balance.get('USD',0))
         self.__cash = round(usd, 2)
-        logger.info("%s USD" % (self.__cash))
         # BTC
         btc = float(balance.get('BTC',0))
         self.__shares = {btc_symbol: btc}
-        logger.info("%s BTC" % (btc))
 
+        logger.info("Account Balance: %s USD, %s BTC" % (self.__cash, btc))
         self.__stop = False  # No errors. Keep running.
 
     def refreshOpenOrders(self):
