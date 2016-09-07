@@ -237,9 +237,10 @@ class CoinbaseRest(object):
 
     def limitorder(self, side, price, size, symbol=BTCUSD, flags=(), cancel_after=None):
         """Place a limit order"""
+        bs = { Bid: "buy", Ask: "sell" }[side]
         params = {
             'type' : 'limit',
-            'side' : side,
+            'side' : bs,
             'product_id' : LOCAL_SYMBOL[symbol],
             'price' : price,
             'size' : size
@@ -258,9 +259,10 @@ class CoinbaseRest(object):
 
     def marketorder(self, side, size, symbol=BTCUSD):
         """Place a market order"""
+        bs = { Bid: "buy", Ask: "sell" }[side]
         params = {
             'type' : 'market',
-            'side' : side,
+            'side' : bs,
             'product_id' : LOCAL_SYMBOL[symbol],
             'size' : size
             }

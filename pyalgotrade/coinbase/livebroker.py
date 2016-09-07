@@ -24,6 +24,7 @@ import datetime
 import pyalgotrade.logger
 from pyalgotrade import broker
 from .netclients import CoinbaseRest as httpclient
+from pyalgotrade.orderbook import Bid, Ask
 
 btc_symbol = 'BTC'
 logger = pyalgotrade.logger.getLogger("coinbase")
@@ -249,7 +250,7 @@ class LiveBroker(broker.Broker):
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)
 
-            side = "buy" if order.isBuy() else "sell"
+            side = Bid if order.isBuy() else Ask
             size = order.getQuantity()
             if order.getType() == order.Type.LIMIT:
                 price = order.getLimitPrice()
