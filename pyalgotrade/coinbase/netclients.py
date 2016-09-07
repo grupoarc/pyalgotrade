@@ -120,6 +120,12 @@ CoinbaseOrder = AttrDict
 
 class CoinbaseRest(object):
 
+    GTC = GOOD_TIL_CANCEL = object()
+    GTT = GOOD_TIL_TIME = object()
+    IOC = IMMEDIATE_OR_CANCEL = object()
+    FOK = FILL_OR_KILL = object()
+    POST_ONLY = object()
+
     def __init__(self, key, secret, passphrase):
         self.__auth = CoinbaseAuth(key, secret, passphrase)
 
@@ -229,7 +235,7 @@ class CoinbaseRest(object):
             }
         return self._auth_postj('orders', json=params)
 
-    def limitorder(self, side, price, size, symbol=BTCUSD):
+    def limitorder(self, side, price, size, symbol=BTCUSD, flags=(), cancel_after=None):
         """Place a limit order"""
         params = {
             'type' : 'limit',
@@ -238,6 +244,16 @@ class CoinbaseRest(object):
             'price' : price,
             'size' : size
             }
+        if self.GTT in flags:
+            if cancel_after is None: raise ValueError("No cancel time specified")
+            params['time_in_force'] = 'GTT'
+            params['cancel_after'] = cancel_after
+        if self.POST_ONLY in flags: params['post_only'] = True
+        elif not self.GTT in flags:
+            if self.GTC in flags: params['time_in_force'] = 'GTC'
+            elif self.IOC in flags: params['time_in_force'] = 'IOC'
+            elif self.FOK in flags: params['time_in_force'] = 'FOK'
+
         return self._auth_postj('orders', json=params)['id']
 
     def marketorder(self, side, size, symbol=BTCUSD):

@@ -253,7 +253,8 @@ class LiveBroker(broker.Broker):
             size = order.getQuantity()
             if order.getType() == order.Type.LIMIT:
                 price = order.getLimitPrice()
-                newOrderId = self.__httpClient.limitorder(side, price, size)
+                flags = (httpclient.POST_ONLY, httpclient.GTC)
+                newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
             elif order.getType() == order.Type.MARKET:
                 newOrderId = self.__httpClient.marketorder(side, size)
             else:
