@@ -19,7 +19,7 @@
 """
 
 import threading
-import datetime
+from datetime import datetime
 import time
 import Queue
 

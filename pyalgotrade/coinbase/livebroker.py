@@ -19,7 +19,7 @@
 """
 
 import Queue
-import datetime
+from datetime import datetime
 
 import pyalgotrade.logger
 from pyalgotrade import broker
