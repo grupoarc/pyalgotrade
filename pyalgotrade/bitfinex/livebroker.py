@@ -19,6 +19,7 @@
 """
 
 import threading
+import datetime
 import time
 import Queue
 
@@ -195,7 +196,7 @@ class LiveBroker(broker.Broker):
             if order is not None:
                 fillPrice = float(trade.price)
                 btcAmount = float(trade.amount)
-                dateTime = float(trade.timestamp)
+                dateTime = datetime.fromtimestamp(float(trade.timestamp))
                 fee = abs(float(trade.fee_amount))
                 if trade.fee_currency != 'USD': fee *= fillPrice
 

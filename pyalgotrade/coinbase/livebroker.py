@@ -19,6 +19,7 @@
 """
 
 import Queue
+import datetime
 
 import pyalgotrade.logger
 from pyalgotrade import broker
@@ -162,7 +163,8 @@ class LiveBroker(broker.Broker):
         if order is not None:
             self.refreshAccountBalance()
             fee = self.__fees(order, match)
-            oei = broker.OrderExecutionInfo(match.price, match.size, fee, match.time)
+            dt = datetime.fromtimestamp(match.time)
+            oei = broker.OrderExecutionInfo(match.price, match.size, fee, dt)
             order.addExecutionInfo(oei)
             # order updated, do housekeeping
             if not order.isActive():
