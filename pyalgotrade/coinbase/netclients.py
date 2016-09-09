@@ -137,12 +137,15 @@ class CoinbaseRest(object):
         return requests.Session()
 
     def _request(self, method, url, **kwargs):
+        raise_errors = kwargs.get('raise_errors', True)
+        if 'raise_errors' in kwargs: del kwargs['raise_errors']
         result = self._session.request(method, URL + url, **kwargs)
-        try:
-            result.raise_for_status() # raise if not status == 200
-        except Exception:
-            print("ERROR RETURN: " + result.text)
-            raise
+        if raise_errors:
+            try:
+                result.raise_for_status() # raise if not status == 200
+            except Exception:
+                print("ERROR RETURN: " + result.text)
+                raise
         return result
 
     def _auth_request(self, method, url, **kwargs):
@@ -268,10 +271,10 @@ class CoinbaseRest(object):
             }
         return self._auth_postj('orders', json=params)['id']
 
-    def cancel(self, orderId=None):
+    def cancel(self, orderId=None, raise_errors=False):
         url = 'orders'
         if orderId is not None: url += '/' + orderId
-        return self._auth_delj(url)
+        return self._auth_delj(url, raise_errors=raise_errors)
 
     def book(self, symbol=BTCUSD, level=2, raw=False):
         """
