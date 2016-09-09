@@ -260,19 +260,7 @@ class LiveBroker(broker.Broker):
             else:
                 raise Exception("Coinbase only does LIMIT and MARKET orders")
 
-            tries = 0
-            newOrder = None
-            while newOrder is None and tries < 5:
-                try:
-                    newOrder = self.__httpClient.Order(newOrderId)
-                except Exception:
-                    pass
-                tries += 1
-
-            if newOrder is None:
-                raise Exception("Unable to get status of coinbase order %s" % newOrderId)
-
-            order.setSubmitted(newOrderId, newOrder.created_at)
+            order.setSubmitted(newOrderId, datetime.now())
             self._registerOrder(order)
             # Switch from INITIAL -> SUBMITTED
             # IMPORTANT: Do not emit an event for this switch because when using the position interface
