@@ -197,12 +197,19 @@ class LiveBroker(broker.Broker):
     def eof(self):
         return self.__stop
 
+    def _order_accepted(self, orderId):
+        try:
+           self.__httpClient.order(orderId)
+           return True
+        except Exception:
+           return False
+
     def dispatch(self):
         evented = False
         # Switch orders from SUBMITTED to ACCEPTED.
         ordersToProcess = self.__activeOrders.values()
         for order in ordersToProcess:
-            if order.isSubmitted():
+            if order.isSubmitted() and self._order_accepted(order.getId()):
                 order.switchState(broker.Order.State.ACCEPTED)
                 self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.ACCEPTED, None))
                 evented = True
