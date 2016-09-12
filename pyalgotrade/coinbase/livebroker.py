@@ -197,22 +197,28 @@ class LiveBroker(broker.Broker):
     def eof(self):
         return self.__stop
 
-    def _order_accepted(self, orderId):
+    def _order_state(self, order):
         try:
-           self.__httpClient.order(orderId)
-           return True
+           order = self.__httpClient.order(order.getId())
+           if order['status'] == 'pending':
+               return None # already in 'submitted'
+           if order['status'] == 'rejected':
+               return broker.Order.State.CANCELED
+           return broker.Order.State.ACCEPTED
         except Exception:
-           return False
+           return None
 
     def dispatch(self):
         evented = False
         # Switch orders from SUBMITTED to ACCEPTED.
         ordersToProcess = self.__activeOrders.values()
         for order in ordersToProcess:
-            if order.isSubmitted() and self._order_accepted(order.getId()):
-                order.switchState(broker.Order.State.ACCEPTED)
-                self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.ACCEPTED, None))
-                evented = True
+            if order.isSubmitted():
+                state = self._order_state(order)
+                if state:
+                    order.switchState(state)
+                    self.notifyOrderEvent(broker.OrderEvent(order, state, None))
+                    evented = True
         # Handle a user trade, if any
         try:
             match = self.__userTradeQueue.get(True, LiveBroker.QUEUE_TIMEOUT)
