@@ -105,6 +105,7 @@ class LiveBroker(broker.Broker):
         self.__userTradeQueue = Queue.Queue()
 
         feed.getMatchEvent().subscribe(self.onMatchEvent)
+        feed.getRcvEvent().subscribe(self.onRcvEvent)
 
     def _registerOrder(self, order):
         assert(order.getId() not in self.__activeOrders)
@@ -197,28 +198,8 @@ class LiveBroker(broker.Broker):
     def eof(self):
         return self.__stop
 
-    def _order_state(self, order):
-        try:
-           order = self.__httpClient.order(order.getId())
-           if order['status'] == 'pending':
-               return None # already in 'submitted'
-           if order['status'] == 'rejected':
-               return broker.Order.State.CANCELED
-           return broker.Order.State.ACCEPTED
-        except Exception:
-           return None
-
     def dispatch(self):
         evented = False
-        # Switch orders from SUBMITTED to ACCEPTED.
-        ordersToProcess = self.__activeOrders.values()
-        for order in ordersToProcess:
-            if order.isSubmitted():
-                state = self._order_state(order)
-                if state:
-                    order.switchState(state)
-                    self.notifyOrderEvent(broker.OrderEvent(order, state, None))
-                    evented = True
         # Handle a user trade, if any
         try:
             match = self.__userTradeQueue.get(True, LiveBroker.QUEUE_TIMEOUT)
@@ -238,6 +219,13 @@ class LiveBroker(broker.Broker):
         if match.involves(self.__activeOrders.keys()):
             self.__userTradeQueue.put(match)
 
+    def onRcvEvent(self, order_id):
+        if order_id in self.__activeOrders:
+            order = self.__activeOrders[order_id]
+            newstate = broker.Order.State.ACCEPTED
+            order.switchState(newstate)
+            logger.info("Switched order %s to ACCEPTED" % order_id)
+            self.notifyOrderEvent(broker.OrderEvent(order, newstate, None))
 
     # BEGIN broker.Broker interface
 
@@ -323,8 +311,8 @@ class LiveBroker(broker.Broker):
         if activeOrder.isFilled():
             raise Exception("Can't cancel order that has already been filled")
 
-        self.__httpClient.cancel(order.getId())
         self._unregisterOrder(order)
+        self.__httpClient.cancel(order.getId())
         order.switchState(broker.Order.State.CANCELED)
 
         # Update cash and shares.

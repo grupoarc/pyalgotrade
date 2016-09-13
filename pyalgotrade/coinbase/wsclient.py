@@ -89,6 +89,7 @@ class WebSocketClient(WebSocketClientBase):
     ON_TRADE = object()
     ON_ORDER_BOOK_UPDATE = object()
     ON_MATCH = object()
+    ON_RECEIVED = object()
 
     def __init__(self):
         url = "wss://ws-feed.gdax.com"
@@ -134,17 +135,20 @@ class WebSocketClient(WebSocketClientBase):
 
 
     def onMessage(self, m):
-        if m['type'] == 'heartbeat': return
-        if m['type'] == 'error':
+        mtype = m['type']
+        if mtype == 'heartbeat': return
+        if mtype == 'error':
             common.logger.error("coinbase ws error: " + repr(m))
             return
-        if not m['type'] in ('received', 'open', 'done', 'match', 'change'):
+        if not mtype in ('received', 'open', 'done', 'match', 'change'):
             common.logger.warning("Unknown coinbase websocket msg: " + repr(m))
             return
-        if m['type'] == 'match':
+        if mtype == 'match':
             cbm = CoinbaseMatch(m)
             self.__queue.put((WebSocketClient.ON_MATCH, cbm))
             self.__queue.put((WebSocketClient.ON_TRADE, cbm.TradeBar()))
+        if mtype == 'received':
+            self.__queue.put((WebSocketClient.ON_RECEIVED, m['order_id']))
         bms = toBookMessages(m, 'BTCUSD')
         if bms:
             u = MarketUpdate(ts=get_current_datetime(), data=bms)
