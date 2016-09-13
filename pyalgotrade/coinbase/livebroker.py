@@ -243,8 +243,15 @@ class LiveBroker(broker.Broker):
         newstate = change.new_state
         if newstate is None: return
         order = self.__activeOrders[order_id]
-        order.switchState(newstate)
-        self.notifyOrderEvent(broker.OrderEvent(order, change.event_type, None))
+        oei = change.oei(order)
+        if oei is not None:
+            order.addExecutionInfo(oei)
+            if newstate != order.getState():
+                self.notifyOrderEvent(broker.OrderEvent(order, change.event_type, oei))
+                oei = None
+        if newstate != order.getState():
+            order.switchState(newstate)
+        self.notifyOrderEvent(broker.OrderEvent(order, change.event_type, oei))
         if not order.isActive():
             self._unregisterOrder(order)
             self.refreshAccountBalance()

@@ -24,7 +24,7 @@ import threading
 import Queue
 
 from pyalgotrade import bar
-from pyalgotrade.broker import Order, OrderEvent
+from pyalgotrade.broker import Order, OrderEvent, OrderExecutionInfo
 from pyalgotrade.websocket.client import WebSocketClientBase
 from pyalgotrade.coinbase import common
 from pyalgotrade.orderbook import OrderBook, MarketUpdate
@@ -85,19 +85,26 @@ class CoinbaseMatch(object):
 class OrderStateChange(object):
     def __init__(self, json):
         self._j = json
-        self.id = self._j['order_id']
-        mtype = self._j['type']
+        self.id = json['order_id']
+        mtype = json['type']
         s, e = None, None
         if mtype == 'received':
             s, e =  Order.State.ACCEPTED, OrderEvent.Type.ACCEPTED
         elif mtype == 'done':
-            if self._j['reason'] == 'filled':
+            if json['reason'] == 'filled' and json.get('remaining_size', None) == '0':
                 s, e = Order.State.FILLED, OrderEvent.Type.FILLED
             else:
                 s, e = Order.State.CANCELED, OrderEvent.Type.CANCELED
+        price = json.get('price', None)
+        self._price = float(price) if price is not None else None
         self.new_state, self.event_type = s, e
 
-
+    def oei(self, order):
+        if self._j.get('reason','') != 'filled': return None
+        dt = datetime.fromtimestamp(self._j['time'])
+        ounfilled = order.getQuantity() - order.getFilled()
+        sizeleft = float(self._j.get('remaining_size', 0.0))
+        return OrderExecutionInfo(self._price, ounfilled - sizeleft, 0, dt)
 
 class WebSocketClient(WebSocketClientBase):
 
