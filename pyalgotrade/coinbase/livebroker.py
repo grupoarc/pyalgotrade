@@ -21,6 +21,8 @@
 import Queue
 from datetime import datetime, timedelta
 
+import requests
+
 import pyalgotrade.logger
 from pyalgotrade import broker
 from .netclients import CoinbaseRest as httpclient
@@ -205,8 +207,12 @@ class LiveBroker(broker.Broker):
         old_watermark = datetime.now() - timedelta(seconds=2)
         for order in ordersToProcess:
             if order.isSubmitted() and old_watermark > order.getSubmitDateTime():
-                venue_order = self.__httpClient.Order(order.getId())
-                if venue_order.status == 'rejected':
+                venue_order = None
+                try:
+                    venue_order = self.__httpClient.Order(order.getId())
+                except requests.exceptions.HTTPError:
+                    pass
+                if venue_order is None or venue_order.status == 'rejected':
                     order.switchState(broker.Order.State.CANCELED)
                     self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, None))
                     evented = True
