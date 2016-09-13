@@ -54,7 +54,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         self.__stopped = False
         self.__orderBookUpdateEvent = observer.Event()
         self.__matchEvent = observer.Event()
-        self.__rcvEvent = observer.Event()
+        self.__changeEvent = observer.Event()
 
     # Factory method for testing purposes.
     def buildWebSocketClientThread(self):
@@ -109,8 +109,8 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             ret = True
             if eventType == wsclient.WebSocketClient.ON_TRADE:
                 self.__barDicts.append({ common.btc_symbol: eventData })
-            elif eventType == wsclient.WebSocketClient.ON_RECEIVED:
-                self.__rcvEvent.emit(eventData)
+            elif eventType == wsclient.WebSocketClient.ON_ORDER_CHANGE:
+                self.__changeEvent.emit(eventData)
             elif eventType == wsclient.WebSocketClient.ON_MATCH:
                 self.__matchEvent.emit(eventData)
             elif eventType == wsclient.WebSocketClient.ON_ORDER_BOOK_UPDATE:
@@ -191,6 +191,6 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     def getMatchEvent(self):
         return self.__matchEvent
 
-    def getRcvEvent(self):
-        return self.__rcvEvent
+    def getChangeEvent(self):
+        return self.__changeEvent
 

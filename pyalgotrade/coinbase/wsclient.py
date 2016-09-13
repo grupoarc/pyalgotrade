@@ -24,6 +24,7 @@ import threading
 import Queue
 
 from pyalgotrade import bar
+from pyalgotrade.broker import Order, OrderEvent
 from pyalgotrade.websocket.client import WebSocketClientBase
 from pyalgotrade.coinbase import common
 from pyalgotrade.orderbook import OrderBook, MarketUpdate
@@ -81,6 +82,21 @@ class CoinbaseMatch(object):
         return TradeBar(self.time, open_, high, low, close, volume, adjClose, freq, dir_)
 
 
+class OrderStateChange(object):
+    def __init__(self, json):
+        self._j = json
+        self.id = self._j['order_id']
+        mtype = self._j['type']
+        s, e = None, None
+        if mtype == 'received':
+            s, e =  Order.State.ACCEPTED, OrderEvent.Type.ACCEPTED
+        elif mtype == 'done':
+            if self._j['reason'] != 'filled':
+                s, e = Order.State.CANCELED, OrderEvent.Type.CANCELED
+        self.new_state, self.event_type = s, e
+
+
+
 class WebSocketClient(WebSocketClientBase):
 
     # Events
@@ -89,7 +105,7 @@ class WebSocketClient(WebSocketClientBase):
     ON_TRADE = object()
     ON_ORDER_BOOK_UPDATE = object()
     ON_MATCH = object()
-    ON_RECEIVED = object()
+    ON_ORDER_CHANGE = object()
 
     def __init__(self):
         url = "wss://ws-feed.gdax.com"
@@ -147,8 +163,8 @@ class WebSocketClient(WebSocketClientBase):
             cbm = CoinbaseMatch(m)
             self.__queue.put((WebSocketClient.ON_MATCH, cbm))
             self.__queue.put((WebSocketClient.ON_TRADE, cbm.TradeBar()))
-        if mtype == 'received':
-            self.__queue.put((WebSocketClient.ON_RECEIVED, m['order_id']))
+        elif mtype in ('received', 'done'):
+            self.__queue.put((WebSocketClient.ON_ORDER_CHANGE, OrderStateChange(m)))
         bms = toBookMessages(m, 'BTCUSD')
         if bms:
             u = MarketUpdate(ts=get_current_datetime(), data=bms)

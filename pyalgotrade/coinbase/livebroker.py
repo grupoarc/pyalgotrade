@@ -19,7 +19,7 @@
 """
 
 import Queue
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pyalgotrade.logger
 from pyalgotrade import broker
@@ -105,7 +105,7 @@ class LiveBroker(broker.Broker):
         self.__userTradeQueue = Queue.Queue()
 
         feed.getMatchEvent().subscribe(self.onMatchEvent)
-        feed.getRcvEvent().subscribe(self.onRcvEvent)
+        feed.getChangeEvent().subscribe(self.onChangeEvent)
 
     def _registerOrder(self, order):
         assert(order.getId() not in self.__activeOrders)
@@ -200,6 +200,17 @@ class LiveBroker(broker.Broker):
 
     def dispatch(self):
         evented = False
+        # Switch orders from SUBMITTED to CANCELED if appropriate
+        ordersToProcess = self.__activeOrders.values()
+        old_watermark = datetime.now() - timedelta(seconds=2)
+        for order in ordersToProcess:
+            if order.isSubmitted() and old_watermark > order.getSubmitDateTime():
+                venue_order = self.__httpClient.Order(order.getId())
+                if venue_order.status == 'rejected':
+                    order.switchState(broker.Order.State.CANCELED)
+                    self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, None))
+                    evented = True
+
         # Handle a user trade, if any
         try:
             match = self.__userTradeQueue.get(True, LiveBroker.QUEUE_TIMEOUT)
@@ -219,13 +230,17 @@ class LiveBroker(broker.Broker):
         if match.involves(self.__activeOrders.keys()):
             self.__userTradeQueue.put(match)
 
-    def onRcvEvent(self, order_id):
-        if order_id in self.__activeOrders:
-            order = self.__activeOrders[order_id]
-            newstate = broker.Order.State.ACCEPTED
-            order.switchState(newstate)
-            logger.info("Switched order %s to ACCEPTED" % order_id)
-            self.notifyOrderEvent(broker.OrderEvent(order, newstate, None))
+    def onChangeEvent(self, change):
+        order_id = change.id
+        if order_id not in self.__activeOrders: return
+        newstate = change.new_state
+        if newstate is None: return
+        order = self.__activeOrders[order_id]
+        order.switchState(newstate)
+        self.notifyOrderEvent(broker.OrderEvent(order, change.event_type, None))
+        if newstate == broker.Order.State.CANCELED:
+            self._unregisterOrder(order)
+            self.refreshAccountBalance()
 
     # BEGIN broker.Broker interface
 
@@ -267,6 +282,7 @@ class LiveBroker(broker.Broker):
             # IMPORTANT: Do not emit an event for this switch because when using the position interface
             # the order is not yet mapped to the position and Position.onOrderUpdated will get called.
             order.switchState(broker.Order.State.SUBMITTED)
+            self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.SUBMITTED, None))
         else:
             raise Exception("The order was already processed")
 
@@ -310,15 +326,8 @@ class LiveBroker(broker.Broker):
             raise Exception("The order is not active anymore")
         if activeOrder.isFilled():
             raise Exception("Can't cancel order that has already been filled")
-
-        self._unregisterOrder(order)
+        # submit the cancel request
         self.__httpClient.cancel(order.getId())
-        order.switchState(broker.Order.State.CANCELED)
-
-        # Update cash and shares.
-        self.refreshAccountBalance()
-
-        # Notify that the order was canceled.
-        self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, "User requested cancellation"))
+        # state changes will happen when confirmation is received in onChange
 
     # END broker.Broker interface
