@@ -91,7 +91,9 @@ class OrderStateChange(object):
         if mtype == 'received':
             s, e =  Order.State.ACCEPTED, OrderEvent.Type.ACCEPTED
         elif mtype == 'done':
-            if self._j['reason'] != 'filled':
+            if self._j['reason'] == 'filled':
+                s, e = Order.State.FILLED, OrderEvent.Type.FILLED
+            else:
                 s, e = Order.State.CANCELED, OrderEvent.Type.CANCELED
         self.new_state, self.event_type = s, e
 

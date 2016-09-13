@@ -245,7 +245,7 @@ class LiveBroker(broker.Broker):
         order = self.__activeOrders[order_id]
         order.switchState(newstate)
         self.notifyOrderEvent(broker.OrderEvent(order, change.event_type, None))
-        if newstate == broker.Order.State.CANCELED:
+        if not order.isActive():
             self._unregisterOrder(order)
             self.refreshAccountBalance()
 
