@@ -213,6 +213,7 @@ class LiveBroker(broker.Broker):
                 except requests.exceptions.HTTPError:
                     pass
                 if venue_order is None or venue_order.status == 'rejected':
+                    self._unregisterOrder(order)
                     order.switchState(broker.Order.State.CANCELED)
                     self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, None))
                     evented = True
