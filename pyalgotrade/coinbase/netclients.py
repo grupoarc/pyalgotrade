@@ -114,7 +114,6 @@ from attrdict import AttrDict
 
 CoinbaseOrder = AttrDict
 
-
 #CoinbaseOrder = namedtuple('CoinbaseOrder', 'id size price done_reason status settled filled_size executed_value product_id fill_fees side created_at done_at')
 #CoinbaseOrder.__new__.__defaults__ = (None,) * len(CoinbaseOrder._fields)
 

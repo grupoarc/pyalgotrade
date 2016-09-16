@@ -101,7 +101,7 @@ class OrderStateChange(object):
 
     def oei(self, order):
         if self._j.get('reason','') != 'filled': return None
-        dt = datetime.fromtimestamp(self._j['time'])
+        dt = datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
         ounfilled = order.getQuantity() - order.getFilled()
         sizeleft = float(self._j.get('remaining_size', 0.0))
         return OrderExecutionInfo(self._price, ounfilled - sizeleft, 0, dt)

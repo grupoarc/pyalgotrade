@@ -137,7 +137,11 @@ class LiveBroker(broker.Broker):
         btc = float(balance.get('BTC',0))
         self.__shares = {btc_symbol: btc}
 
-        logger.info("Account Balance: %s USD, %s BTC" % (self.__cash, btc))
+        data = {'usd': self.__cash,
+                'btc': btc
+               }
+
+        logger.info("Account Balance: {usd} USD, {btc} BTC".format(**data))
         self.__stop = False  # No errors. Keep running.
 
     def refreshOpenOrders(self):
@@ -203,20 +207,19 @@ class LiveBroker(broker.Broker):
     def dispatch(self):
         evented = False
         # Switch orders from SUBMITTED to CANCELED if appropriate
-        ordersToProcess = self.__activeOrders.values()
-        old_watermark = datetime.now() - timedelta(seconds=2)
+        #ordersToProcess = self.__activeOrders.values()
+        ordersToProcess = []
+        old_watermark = datetime.now() - timedelta(seconds=5)
         for order in ordersToProcess:
             if order.isSubmitted() and old_watermark > order.getSubmitDateTime():
+                logger.info("Order {} still in SUBMITTED after 5s. Polling.".format(order.getId()))
                 venue_order = None
                 try:
                     venue_order = self.__httpClient.Order(order.getId())
                 except requests.exceptions.HTTPError:
                     pass
-                if venue_order is None or venue_order.status == 'rejected':
-                    self._unregisterOrder(order)
-                    order.switchState(broker.Order.State.CANCELED)
-                    self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, None))
-                    evented = True
+                self.applyUpdate(order, venue_order)
+                evented = True
 
         # Handle a user trade, if any
         try:
@@ -226,6 +229,36 @@ class LiveBroker(broker.Broker):
         except Queue.Empty:
             pass
         return evented
+
+    def applyUpdate(self, order, cborder):
+        # presumes order is in 'submitted' state
+        if cborder is None or cborder.status == 'rejected':
+            self._unregisterOrder(order)
+            order.switchState(broker.Order.State.CANCELED)
+            self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, None))
+        elif cborder.status == 'open':
+            order.switchState(broker.Order.State.ACCEPTED)
+            self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.ACCEPTED, None))
+        elif cborder.status == 'done':
+            if cborder.done_reason == 'canceled':
+                if cborder.filled_size != '0':
+                    order.addExecutionInfo(self._CBOrderOEI(cborder))
+                order.switchState(broker.Order.State.CANCELED)
+                self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.CANCELED, None))
+            elif cborder.done_reason == 'filled':
+                order.addExecutionInfo(self._CBOrderOEI(cborder))
+                self.notifyOrderEvent(broker.OrderEvent(order, broker.OrderEvent.Type.FILLED, None))
+            else:
+                raise Exception("Unknown done reason: %r" % cborder)
+        else:
+            raise Exception("Unknown order status: %r" % cborder)
+
+    def _CBOrderOEI(self, cborder):
+        dt = datetime.strptime(cborder.done_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+        cbprice = float(cborder.price)
+        cbfilled = float(cborder.filled_size)
+        cbfees = float(cborder.fill_fees)
+        return broker.OrderExecutionInfo(cbprice, cbfilled, cbfees, dt)
 
     def peekDateTime(self):
         # Return None since this is a realtime subject.
