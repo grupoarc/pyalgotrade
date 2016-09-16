@@ -152,9 +152,10 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
     def dispatch(self):
         # Note that we may return True even if we didn't dispatch any Bar
         # event.
-        if self.__dispatchImpl(None): return True
-        if super(LiveTradeFeed, self).dispatch(): return True
-        return False
+        ret = False
+        if self.__dispatchImpl(None): ret = True
+        if super(LiveTradeFeed, self).dispatch(): ret = True
+        return ret
 
     # This should not raise.
     def stop(self):
