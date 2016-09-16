@@ -60,7 +60,11 @@ class CoinbaseMatch(object):
 
     @property
     def time(self):
-        return (datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ") - EPOCH).total_seconds()
+        return (self.datetime - EPOCH).total_seconds()
+
+    @property
+    def datetime(self):
+        return datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
 
     @property
     def price(self): return float(self._j['price'])
@@ -79,7 +83,7 @@ class CoinbaseMatch(object):
         adjClose = None
         freq = bar.Frequency.TRADE
         dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
-        return TradeBar(self.time, open_, high, low, close, volume, adjClose, freq, dir_)
+        return TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
 
 
 class OrderStateChange(object):
