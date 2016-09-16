@@ -19,9 +19,7 @@
 """
 
 import Queue
-from datetime import datetime, timedelta
-
-import requests
+from datetime import datetime
 
 import pyalgotrade.logger
 from pyalgotrade import broker
@@ -206,26 +204,10 @@ class LiveBroker(broker.Broker):
 
     def dispatch(self):
         evented = False
-        # Switch orders from SUBMITTED to CANCELED if appropriate
-        #ordersToProcess = self.__activeOrders.values()
-        ordersToProcess = []
-        old_watermark = datetime.now() - timedelta(seconds=5)
-        for order in ordersToProcess:
-            if order.isSubmitted() and old_watermark > order.getSubmitDateTime():
-                logger.info("Order {} still in SUBMITTED after 5s. Polling.".format(order.getId()))
-                venue_order = None
-                try:
-                    venue_order = self.__httpClient.Order(order.getId())
-                except requests.exceptions.HTTPError:
-                    pass
-                self.applyUpdate(order, venue_order)
-                evented = True
-
         # Handle a user trade, if any
         try:
             match = self.__userTradeQueue.get(True, LiveBroker.QUEUE_TIMEOUT)
-            utraded = self._onUserTrade(match)
-            evented = utraded or evented
+            evented = self._onUserTrade(match)
         except Queue.Empty:
             pass
         return evented
