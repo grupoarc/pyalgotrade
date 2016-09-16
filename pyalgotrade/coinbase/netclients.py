@@ -143,7 +143,7 @@ class CoinbaseRest(object):
             try:
                 result.raise_for_status() # raise if not status == 200
             except Exception:
-                print("ERROR RETURN: " + result.text)
+                print("ERROR: " + method + " " + url + " " + repr(kwargs) + " GOT: " + result.text)
                 raise
         return result
 
