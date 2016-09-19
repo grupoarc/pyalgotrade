@@ -251,7 +251,7 @@ class LiveBroker(broker.Broker):
     # END observer.Subject interface
 
     def onMatchEvent(self, match):
-        self.match_lag = datetime.now() - match.datetime
+        self.match_lag = datetime.utcnow() - match.datetime
         if match.involves(self.__activeOrders.keys()):
             self.__userTradeQueue.put(match)
 
