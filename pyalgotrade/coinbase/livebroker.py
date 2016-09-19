@@ -107,6 +107,8 @@ class LiveBroker(broker.Broker):
         feed.getMatchEvent().subscribe(self.onMatchEvent)
         feed.getChangeEvent().subscribe(self.onChangeEvent)
 
+        self.match_lag = None
+
     def _registerOrder(self, order):
         assert(order.getId() not in self.__activeOrders)
         assert(order.getId() is not None)
@@ -249,6 +251,7 @@ class LiveBroker(broker.Broker):
     # END observer.Subject interface
 
     def onMatchEvent(self, match):
+        self.match_lag = datetime.now() - match.datetime
         if match.involves(self.__activeOrders.keys()):
             self.__userTradeQueue.put(match)
 

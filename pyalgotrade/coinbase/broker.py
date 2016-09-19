@@ -141,10 +141,7 @@ class BacktestingBroker(backtesting.Broker):
         if instrument != common.btc_symbol:
             raise Exception("Only BTC instrument is supported")
 
-        if action == broker.Order.Action.BUY_TO_COVER:
-            action = broker.Order.Action.BUY
-        elif action == broker.Order.Action.SELL_SHORT:
-            action = broker.Order.Action.SELL
+        action = self._remap_action(action)
 
         if limitPrice * quantity < BacktestingBroker.MIN_TRADE_USD:
             raise Exception("Trade must be >= %s" % (BacktestingBroker.MIN_TRADE_USD))
