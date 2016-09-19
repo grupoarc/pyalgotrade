@@ -30,7 +30,7 @@ from pyalgotrade.coinbase import common
 from pyalgotrade.orderbook import OrderBook, MarketUpdate
 from pyalgotrade.coinbase.streamsync import StreamSynchronizer
 
-from pyalgotrade.coinbase.netclients import toBookMessages
+from pyalgotrade.coinbase.netclients import toBookMessages, lazy_init
 
 
 def get_current_datetime():
@@ -87,9 +87,31 @@ class CoinbaseMatch(object):
 
 
 class OrderStateChange(object):
+
     def __init__(self, json):
         self._j = json
-        self.id = json['order_id']
+        self._id = None
+        self._price = None
+        self._new_state, self._event_type = None, None
+
+    @property
+    def id(self):
+        if self._id is None: self.__parse()
+        return self._id
+
+    @property
+    def new_state(self):
+        if self._id is None: self.__parse()
+        return self._new_state
+
+    @property
+    def event_type(self):
+        if self._id is None: self.__parse()
+        return self._event_type
+
+    def __parse(self):
+        json = self._j
+        self._id = json['order_id']
         mtype = json['type']
         s, e = None, None
         if mtype == 'received':
@@ -101,14 +123,17 @@ class OrderStateChange(object):
                 s, e = Order.State.CANCELED, OrderEvent.Type.CANCELED
         price = json.get('price', None)
         self._price = float(price) if price is not None else None
-        self.new_state, self.event_type = s, e
+        self._new_state, self._event_type = s, e
 
     def oei(self, order):
         if self._j.get('reason','') != 'filled': return None
         dt = datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
         ounfilled = order.getQuantity() - order.getFilled()
         sizeleft = float(self._j.get('remaining_size', 0.0))
+        if self._price is None: self.__parse()
         return OrderExecutionInfo(self._price, ounfilled - sizeleft, 0, dt)
+
+
 
 class WebSocketClient(WebSocketClientBase):
 
