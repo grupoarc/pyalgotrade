@@ -55,6 +55,14 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         self.__orderBookUpdateEvent = observer.Event()
         self.__matchEvent = observer.Event()
         self.__changeEvent = observer.Event()
+        self.EVENT_HANDLER = {wsclient.WebSocketClient.ON_TRADE: self.__onTrade,
+                              wsclient.WebSocketClient.ON_MATCH: self.__matchEvent.emit,
+                              wsclient.WebSocketClient.ON_ORDER_CHANGE: self.__changeEvent.emit,
+                              wsclient.WebSocketClient.ON_ORDER_BOOK_UPDATE: self.__orderBookUpdateEvent.emit,
+                              wsclient.WebSocketClient.ON_CONNECTED: self.__onConnected,
+                              wsclient.WebSocketClient.ON_DISCONNECTED: self.__onDisconnected,
+                              }
+
 
     # Factory method for testing purposes.
     def buildWebSocketClientThread(self):
@@ -99,32 +107,28 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         else:
             self.__stopped = True
 
+    def __onTrade(self, eventData):
+        self.__barDicts.append({ common.btc_symbol: eventData })
+
+    def __onConnected(self, eventData):
+        self.__initializationOk = True
+
     def __dispatchImpl(self, eventFilter):
-        ret = False
         try:
             eventType, eventData = self.__thread.getQueue().get(True, LiveTradeFeed.QUEUE_TIMEOUT)
-            if eventFilter is not None and eventType not in eventFilter:
-                return False
-
-            ret = True
-            if eventType == wsclient.WebSocketClient.ON_TRADE:
-                self.__barDicts.append({ common.btc_symbol: eventData })
-            elif eventType == wsclient.WebSocketClient.ON_ORDER_CHANGE:
-                self.__changeEvent.emit(eventData)
-            elif eventType == wsclient.WebSocketClient.ON_MATCH:
-                self.__matchEvent.emit(eventData)
-            elif eventType == wsclient.WebSocketClient.ON_ORDER_BOOK_UPDATE:
-                self.__orderBookUpdateEvent.emit(eventData)
-            elif eventType == wsclient.WebSocketClient.ON_CONNECTED:
-                self.__initializationOk = True
-            elif eventType == wsclient.WebSocketClient.ON_DISCONNECTED:
-                self.__onDisconnected()
-            else:
-                ret = False
-                common.logger.error("Invalid event received to dispatch: %s - %s" % (eventType, eventData))
         except Queue.Empty:
-            pass
-        return ret
+            return False
+
+        if eventFilter is not None and eventType not in eventFilter:
+            return False
+
+        todo = self.EVENT_HANDLER.get(eventType)
+        if todo is None:
+            common.logger.error("Invalid event received to dispatch: %s - %s" % (eventType, eventData))
+            return False
+
+        todo(eventData)
+        return True
 
     def barsHaveAdjClose(self):
         return False
