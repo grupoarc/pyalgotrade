@@ -33,6 +33,7 @@ setup(
         "enum34",
         "sortedcontainers",
         "attrdict",
+        "ujson",
         "numpy",
         "pytz",
         "python-dateutil",
