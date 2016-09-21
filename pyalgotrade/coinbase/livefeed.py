@@ -96,7 +96,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             common.logger.error("Initialization failed.")
         return self.__initializationOk
 
-    def __onDisconnected(self):
+    def __onDisconnected(self, *_):
         if self.__enableReconnection:
             initialized = False
             while not self.__stopped and not initialized:
