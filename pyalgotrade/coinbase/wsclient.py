@@ -170,7 +170,7 @@ class WebSocketClient(WebSocketClientBase):
         self.send(subscribe)
         self._book = OrderBook()
 
-        ts_from_stream = lambda m: min(t.rts for t in m.data)
+        ts_from_stream = lambda m: min(t.seq for t in m.data)
         stream_newer_than_ts = lambda ts, m: m.data and ts_from_stream(m) > ts
 
         self.__syncr = StreamSynchronizer(ts_from_stream,
@@ -191,7 +191,7 @@ class WebSocketClient(WebSocketClientBase):
     def _apply_full(self, syncdata):
         self._book.update(syncdata)
         #common.logger.info("got sync")
-        return syncdata.data[0].rts
+        return syncdata.data[0].seq
 
 
     def onMessage(self, m):
@@ -211,7 +211,7 @@ class WebSocketClient(WebSocketClientBase):
             self.__queue.put((WebSocketClient.ON_ORDER_CHANGE, OrderStateChange(m)))
         bms = toBookMessages(m, 'BTCUSD')
         if bms:
-            u = MarketUpdate(ts=get_current_datetime(), data=bms)
+            u = MarketUpdate(ts=get_current_datetime(), rts=bms[-1].rts, data=bms)
             self.__syncr.submit_streamdata(u)
 
     def onClosed(self, code, reason):

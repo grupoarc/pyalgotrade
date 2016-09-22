@@ -54,8 +54,9 @@ def toBookMessages(coinbase_json, symbol):
     else:
         raise ValueError("Unknown coinbase message: %r" % cbase)
     #rts = datetime.strptime(cbase['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
-    rts = int(cbase['sequence'])
-    return [mtype(rts, VENUE, symbol, float(price), float(size), side)]
+    rts = cbase['time']
+    seq = int(cbase['sequence'])
+    return [mtype(rts, seq, VENUE, symbol, float(price), float(size), side)]
 
 
 # ---------------------------------------------------------------------------
@@ -301,14 +302,15 @@ class CoinbaseRest(object):
 
     def book_snapshot(self, symbol=BTCUSD):
         book = self.book(symbol)
-        def mkassign(ts, price, size, side):
-            return Assign(ts, VENUE, symbol, price, size, side)
-        rts = book['sequence']
+        now = time.time()
+        seq = int(book['sequence'])
+        def mkassign(price, size, side):
+            return Assign(now, seq, VENUE, symbol, price, size, side)
         price = lambda e: float(e[0])
         size = lambda e: float(e[1])
-        return MarketSnapshot(time.time(), VENUE, symbol,
-            [ mkassign(rts, price(e), size(e), Bid) for e in book['bids'] ] +
-            [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]
+        return MarketSnapshot(now, None, VENUE, symbol,
+            [ mkassign(price(e), size(e), Bid) for e in book['bids'] ] +
+            [ mkassign(price(e), size(e), Ask) for e in book['asks'] ]
         )
 
     def inside_bid_ask(self):

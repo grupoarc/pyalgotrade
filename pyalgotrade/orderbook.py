@@ -20,8 +20,8 @@ Bid, Ask = Side.Bid, Side.Ask
 
 # These classes are used to update the OrderBook
 
-AbstractMarketDataWrapper = namedtuple('AbstractMarketDataWrapper', 'ts venue symbol data')
-AbstractMarketDataWrapper.__new__.__defaults__ = (0, '', '', [])
+AbstractMarketDataWrapper = namedtuple('AbstractMarketDataWrapper', 'ts rts venue symbol data')
+AbstractMarketDataWrapper.__new__.__defaults__ = (0, 0, '', '', [])
 
 class MarketUpdate(AbstractMarketDataWrapper):
     """An incremental change to the order book"""
@@ -32,8 +32,8 @@ class MarketSnapshot(AbstractMarketDataWrapper):
     pass
 
 # Market{Update,Snapshot} are really just wrappers for these (within .data)
-AbstractMarketDataDelta = namedtuple('AbstractMarketDataDelta', 'rts venue symbol price size side')
-AbstractMarketDataDelta.__new__.__defaults__ = (0, '', '', 0, 0, Ask)
+AbstractMarketDataDelta = namedtuple('AbstractMarketDataDelta', 'rts seq venue symbol price size side')
+AbstractMarketDataDelta.__new__.__defaults__ = (0, None, '', '', 0, 0, Ask)
 
 class Assign(AbstractMarketDataDelta):
     """Set a price/size/side"""
@@ -111,7 +111,8 @@ class OrderBook():
     def marketsnapshot(self):
         """Return the OrderBook as a MarketSnapshot"""
         data = self.bids.values() + self.asks.values()
-        return MarketSnapshot(time.time(), self.venue, self.symbol, data)
+        rts = None if not self.last or not self.last.data else self.last.data[-1].rts
+        return MarketSnapshot(time.time(), rts, self.venue, self.symbol, data)
 
     @classmethod
     def from_snapshot(cls, snapshot):
