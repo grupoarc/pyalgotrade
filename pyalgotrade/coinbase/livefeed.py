@@ -41,8 +41,6 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         Note that a Bar will be created for every trade, so open, high, low and close values will all be the same.
     """
 
-    QUEUE_TIMEOUT = 0.01
-
     def __init__(self, maxLen=None):
         super(LiveTradeFeed, self).__init__(bar.Frequency.TRADE, maxLen)
         self.__barDicts = []
@@ -115,7 +113,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     def __dispatchImpl(self, eventFilter):
         try:
-            eventType, eventData = self.__thread.getQueue().get(True, LiveTradeFeed.QUEUE_TIMEOUT)
+            eventType, eventData = self.__thread.getQueue().get(False)
         except Queue.Empty:
             return False
 

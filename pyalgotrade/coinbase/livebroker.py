@@ -92,8 +92,6 @@ class LiveBroker(broker.Broker):
           * Sell limit order
     """
 
-    QUEUE_TIMEOUT = 0.01
-
     def __init__(self, key, secret, passphrase, feed):
         super(LiveBroker, self).__init__()
         self.__stop = False
@@ -208,7 +206,7 @@ class LiveBroker(broker.Broker):
         evented = False
         # Handle a user trade, if any
         try:
-            match = self.__userTradeQueue.get(True, LiveBroker.QUEUE_TIMEOUT)
+            match = self.__userTradeQueue.get(False)
             evented = self._onUserTrade(match)
         except Queue.Empty:
             pass
