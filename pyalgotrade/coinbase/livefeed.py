@@ -20,6 +20,7 @@
 
 import time
 import Queue
+from datetime import timedelta, datetime
 
 from pyalgotrade import bar
 from pyalgotrade import barfeed
@@ -60,6 +61,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
                               wsclient.WebSocketClient.ON_CONNECTED: self.__onConnected,
                               wsclient.WebSocketClient.ON_DISCONNECTED: self.__onDisconnected,
                               }
+        self._prevbar_ts = datetime.fromtimestamp(0)
 
 
     # Factory method for testing purposes.
@@ -106,7 +108,13 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             self.__stopped = True
 
     def __onTrade(self, eventData):
-        self.__barDicts.append({ common.btc_symbol: eventData })
+        trade = eventData
+        newts = eventData.getDateTime()
+        if self._prevbar_ts >= newts:
+            newts = self._prevbar_ts + timedelta(seconds=0.0001)
+            trade = trade.clone(time=newts)
+        self.__barDicts.append({ common.btc_symbol: trade })
+        self._prevbar_ts = newts
 
     def __onConnected(self, eventData):
         self.__initializationOk = True

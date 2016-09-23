@@ -51,6 +51,21 @@ class TradeBar(bar.BasicBar):
     def getDirection(self):
         return self.__direction
 
+    def clone(self, **kwargs):
+        args = {'time': self.getDateTime(),
+                'open_': self.getOpen(),
+                'high': self.getHigh(),
+                'low': self.getLow(),
+                'close': self.getClose(),
+                'volume': self.getVolume(),
+                'adjClose': self.getAdjClose(),
+                'freq': self.getFrequency(),
+                'direction': self.getDirection()
+                }
+        args.update(kwargs)
+        return TradeBar(**args)
+
+
 
 
 class CoinbaseMatch(object):
