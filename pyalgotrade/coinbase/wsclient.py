@@ -44,8 +44,8 @@ class TradeBar(bar.BasicBar):
     UP = 'UP'
     DOWN = 'DOWN'
 
-    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
-        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
+    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction, extra={}):
+        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq, extra=extra)
         self.__direction = direction
 
     def getDirection(self):
@@ -60,7 +60,8 @@ class TradeBar(bar.BasicBar):
                 'volume': self.getVolume(),
                 'adjClose': self.getAdjClose(),
                 'freq': self.getFrequency(),
-                'direction': self.getDirection()
+                'direction': self.getDirection(),
+                'extra': self.getExtraColumns()
                 }
         args.update(kwargs)
         return TradeBar(**args)
@@ -101,8 +102,7 @@ class CoinbaseMatch(object):
         adjClose = None
         freq = bar.Frequency.TRADE
         dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
-        tbar = TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
-        tbar._seq = self.seq
+        tbar = TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_, extra={'seq':self.seq})
         return tbar
 
 
