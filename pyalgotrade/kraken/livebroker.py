@@ -23,7 +23,7 @@ from datetime import datetime
 
 import pyalgotrade.logger
 from pyalgotrade import broker
-from .netclients import CoinbaseRest as httpclient
+from .netclients import KrakenRest as httpclient
 from pyalgotrade.orderbook import Bid, Ask
 
 btc_symbol = 'BTC'
@@ -67,14 +67,12 @@ def build_order_from_open_order(openOrder, instrumentTraits=DEFAULT_TRAITS):
 
 
 class LiveBroker(broker.Broker):
-    """A Bitstamp live broker.
+    """A live broker.
 
     :param key: API key.
     :type key: string.
     :param secret: API secret.
     :type secret: string.
-    :param passphrase: API passphrase.
-    :type passphrase: string.
 
 
     .. note::
@@ -94,10 +92,10 @@ class LiveBroker(broker.Broker):
 
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(self, key, secret, passphrase, feed):
+    def __init__(self, key, secret, feed):
         super(LiveBroker, self).__init__()
         self.__stop = False
-        self.__httpClient = self.buildHTTPClient(key, secret, passphrase)
+        self.__httpClient = self.buildHTTPClient(key, secret)
         self.__tradeMonitor = feed
         self.__cash = 0
         self.__shares = {}
@@ -120,8 +118,8 @@ class LiveBroker(broker.Broker):
         del self.__activeOrders[order.getId()]
 
     # Factory method for testing purposes.
-    def buildHTTPClient(self, key, secret, passphrase):
-        return httpclient(key, secret, passphrase)
+    def buildHTTPClient(self, key, secret):
+        return httpclient(key, secret)
 
     def refreshAccountBalance(self):
         """Refreshes cash and BTC balance."""
@@ -147,7 +145,7 @@ class LiveBroker(broker.Broker):
     def refreshOpenOrders(self):
         self.__stop = True  # Stop running in case of errors.
         logger.info("Retrieving open orders.")
-        openOrders = self.__httpClient.Orders(['open', 'pending', 'active'])
+        openOrders = self.__httpClient.OpenOrders()
         for openOrder in openOrders:
             self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(btc_symbol)))
 
@@ -292,6 +290,10 @@ class LiveBroker(broker.Broker):
         return self.__activeOrders.values()
 
     def submitOrder(self, order):
+        """
+        order: a broker.Order to be placed via (translation to) __httpClient calls
+        """
+
         if order.isInitial():
             # Override user settings based on Bitstamp limitations.
             order.setAllOrNone(False)
@@ -301,7 +303,7 @@ class LiveBroker(broker.Broker):
             size = order.getQuantity()
             if order.getType() == order.Type.LIMIT:
                 price = order.getLimitPrice()
-                flags = (httpclient.POST_ONLY, httpclient.GTC)
+                flags = (httpclient.POST_ONLY, )
                 newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
             elif order.getType() == order.Type.MARKET:
                 newOrderId = self.__httpClient.marketorder(side, size)

@@ -340,6 +340,10 @@ class KrakenRest(object):
         #log.info("Got inside bid: {} ask: {}".format(bid, ask))
         return bid, ask
 
+    def OpenOrders(self, **ooargs):
+        return [Order(txid, **oinfo) for txid, oinfo in self.open_orders(**ooargs).items()]
+
+
 
 
 class BookPoller(threading.Thread):
