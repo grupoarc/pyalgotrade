@@ -220,10 +220,12 @@ class KrakenRest(object):
         if end is not None: params['end'] = end
         return self._auth_postj('ClosedOrders', data=params)
 
-    def query_orders(self, *txids, trades=False, userref=None):
+    def query_orders(self, *txids, **kwargs):
+    #def query_orders(self, *txids, trades=False, userref=None):
         params = { 'txid': ','.join(str(i) for i in txids) }
-        if trades: params['trades'] = 'true'
-        if userref is not None: params['userref'] = userref
+        params['trades'] = bool(kwargs.get('trades'))
+        if kwargs.get('userref') is not None:
+            params['userref'] = kwargs['userref']
         return self._auth_postj('QueryOrders', data=params)
 
     def trades_history(self, ofs, ttype='all', trades=False, start=None, end=None):
@@ -234,14 +236,14 @@ class KrakenRest(object):
         if trades: params['trades'] = 'true'
         return self._auth_postj('TradesHistory', data=params)
 
-    def query_trades(self, *txids, trades=False):
+    def query_trades(self, *txids, **kwargs):
         params = { 'txid': ','.join(str(i) for i in txids) }
-        if trades: params['trades'] = 'true'
+        params['trades'] = bool(kwargs.get('trades'))
         return self._auth_postj('QueryTrades', data=params)
 
-    def open_positions(self, *txids, docalcs=False):
+    def open_positions(self, *txids, **kwargs):
         params = { 'txid': ','.join(str(i) for i in txids) }
-        if docalcs: params['docalcs'] = 'true'
+        params['docalcs'] = bool(kwargs.get('docalcs'))
         return self._auth_postj('OpenPositions', data=params)
 
     def ledgers(self, ofs, aclass='currency', asset=None, ltype='all', start=None, end=None):
