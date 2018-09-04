@@ -77,13 +77,19 @@ class CoinbaseMatch(object):
             if oid in oidlist: return oid
         return None
 
+    @property
+    def seq(self): return int(self._j['sequence'])
+
     def TradeBar(self):
         open_ = high = low = close = self.price
         volume = self.size
         adjClose = None
         freq = bar.Frequency.TRADE
         dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
-        return TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
+        tbar = TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
+        tbar._seq = self.seq
+        return tbar
+
 
 
 class OrderStateChange(object):
