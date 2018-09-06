@@ -1,7 +1,7 @@
 
 from __future__ import print_function
 
-import hmac, hashlib, time, requests, base64, threading
+import hmac, hashlib, time, requests, base64, threading, Queue
 import ujson as json
 
 from requests.auth import AuthBase
@@ -360,7 +360,7 @@ class BookPoller(threading.Thread):
         self.__running = True
 
     def _poll(self):
-		return [(self.ON_ORDER_BOOK_UPDATE, self.__httpClient.book_snapshot())]
+        return [(self.ON_ORDER_BOOK_UPDATE, self.__httpClient.book_snapshot())]
 
     def getQueue(self):
         return self.__queue
@@ -374,7 +374,7 @@ class BookPoller(threading.Thread):
                 events = self._poll()
                 if events:
                     logger.info("%d new event(s) found" % (len(events)))
-				for e in events:
+                for e in events:
                     self.__queue.put(e)
             except Exception as e:
                 logger.critical("Error retrieving user transactions", exc_info=e)
@@ -384,6 +384,9 @@ class BookPoller(threading.Thread):
 
     def stop(self):
         self.__running = False
+
+    def is_alive(self):
+        return self.__running and super(BookPoller, self).is_alive()
 
 
 

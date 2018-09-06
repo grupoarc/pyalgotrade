@@ -27,7 +27,7 @@ from .netclients import KrakenRest as httpclient
 from pyalgotrade.orderbook import Bid, Ask
 
 btc_symbol = 'BTC'
-logger = pyalgotrade.logger.getLogger("coinbase")
+logger = pyalgotrade.logger.getLogger("kraken")
 
 class BTCTraits(broker.InstrumentTraits):
     def roundQuantity(self, quantity):

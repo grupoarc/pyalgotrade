@@ -25,7 +25,7 @@ from pyalgotrade import bar
 from pyalgotrade import broker
 from pyalgotrade.broker import backtesting, MarketOrder
 from pyalgotrade.coinbase import common
-from pyalgotrade.coinbase import livebroker
+from pyalgotrade.kraken import livebroker
 from pyalgotrade.orderbook import OrderBook, Bid, Ask
 
 from pyalgotrade.coinbase.wsclient import TradeBar
