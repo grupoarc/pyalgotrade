@@ -21,7 +21,9 @@
 from pyalgotrade import utils
 from pyalgotrade import observer
 from pyalgotrade import dispatchprio
+import pyalgotrade.logger
 
+logger = pyalgotrade.logger.getLogger("Dispatcher")
 
 # This class is responsible for dispatching events from multiple subjects, synchronizing them if necessary.
 class Dispatcher(object):
