@@ -26,7 +26,7 @@ from pyalgotrade import broker
 from .netclients import KrakenRest as httpclient
 from pyalgotrade.orderbook import Bid, Ask
 
-btc_symbol = 'BTC'
+btc_symbol = 'XBT'
 logger = pyalgotrade.logger.getLogger("kraken")
 
 class BTCTraits(broker.InstrumentTraits):

@@ -91,8 +91,8 @@ class KrakenAuth(AuthBase):
 
     def __call__(self, request):
         nonce = int(1000*time.time())
-        if request.data:
-            request.data['nonce'] = nonce
+        request.data = getattr(request, 'data', {})
+        request.data['nonce'] = nonce
         request.prepare_body(request.data, [])
         message = request.path_url + hashlib.sha256(str(nonce) + request.body).digest()
         hmac_key = base64.b64decode(self.secret_key)
@@ -196,7 +196,7 @@ class KrakenRest(object):
     #
 
     def accounts(self):
-        return self._auth_postj('Balance')
+        return self._auth_getj('Balance')
 
     def trade_balance(self, aclass=None, asset=None):
         params = {}
