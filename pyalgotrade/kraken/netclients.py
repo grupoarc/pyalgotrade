@@ -2,10 +2,14 @@
 from __future__ import print_function
 
 import hmac, hashlib, time, requests, base64, threading, Queue
+import base64
 import ujson as json
 
 from requests.auth import AuthBase
 from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
+import pyalgotrade.logger
+
+logger = pyalgotrade.logger.getLogger("kraken")
 
 BTCUSD, BTCEUR = 'BTCUSD', 'BTCEUR'
 
@@ -93,15 +97,15 @@ class KrakenAuth(AuthBase):
         nonce = int(1000*time.time())
         request.data = getattr(request, 'data', {})
         request.data['nonce'] = nonce
-        request.prepare_body(request.data, [])
+        request.prepare_body(request.data, []) # build request.body from request.data
+
         message = request.path_url + hashlib.sha256(str(nonce) + request.body).digest()
         hmac_key = base64.b64decode(self.secret_key)
-        signature = hmac.new(hmac_key, message, hashlib.sha512)
-        signature_b64 = signature.digest().encode('base64').rstrip('\n')
+        signature = hmac.new(hmac_key, message, hashlib.sha512).digest()
 
         request.headers.update({
             'API-Key': self.api_key,
-            'API-Sign': signature_b64
+            'API-Sign': base64.b64encode(signature)
         })
         return request
 
@@ -153,9 +157,10 @@ class KrakenRest(object):
         if not 'auth' in kwargs: kwargs['auth'] = self.auth()
         return self._request(method, url, **kwargs)
 
+    def _get(self, url, **kwargs): return self._request('GET', url, **kwargs).json()
     def _getj(self, url, **kwargs): return self._get(url + 'public/', **kwargs).json()
-    def _auth_getj(self, url, **kwargs): return self._auth_request('GET', url + 'private/', **kwargs).json()
-    def _auth_postj(self, url, **kwargs): return self._auth_request('POST', url + 'private/', **kwargs).json()
+    def _auth_getj(self, url, **kwargs): return self._auth_request('GET', 'private/' + url, **kwargs).json()
+    def _auth_postj(self, url, **kwargs): return self._auth_request('POST', 'private/' + url, **kwargs).json()
 
     #
     # Market data (public endpoints)
@@ -196,7 +201,7 @@ class KrakenRest(object):
     #
 
     def accounts(self):
-        return self._auth_getj('Balance')
+        return self._auth_postj('Balance')
 
     def trade_balance(self, aclass=None, asset=None):
         params = {}
@@ -207,7 +212,7 @@ class KrakenRest(object):
     def open_orders(self, trades=False, userref=None):
         params = { 'trades': 'true' if trades else 'false' }
         if userref is not None: params['userref'] = userref
-        return self._auth_postj('OpenOrders', data=params)
+        return self._auth_postj('OpenOrders', data=params)['result']['open']
 
     def closed_orders(self, offset, trades=False, userref=None, start=None, end=None, closetime=None):
         """
@@ -343,7 +348,7 @@ class KrakenRest(object):
         return bid, ask
 
     def OpenOrders(self, **ooargs):
-        return [Order(txid, **oinfo) for txid, oinfo in self.open_orders(**ooargs).items()]
+        return [KrakenOrder(txid, **oinfo) for txid, oinfo in self.open_orders(**ooargs).items()]
 
 
 
@@ -385,8 +390,13 @@ class BookPoller(threading.Thread):
     def stop(self):
         self.__running = False
 
+    def stopped(self):
+        return self.__running == False
+
     def is_alive(self):
         return self.__running and super(BookPoller, self).is_alive()
 
-
+    def join(self):
+        if self.is_alive():
+            super(BookPoller, self).join()
 

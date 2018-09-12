@@ -116,7 +116,7 @@ class LiveBookFeed(barfeed.BaseBarFeed):
         return False
 
     def eof(self):
-        return self.__poller.is_alive()
+        return not self.isAlive()
 
     def getNextBars(self):
         ret = None
@@ -127,6 +127,9 @@ class LiveBookFeed(barfeed.BaseBarFeed):
     def peekDateTime(self):
         # Return None since this is a realtime subject.
         return None
+
+    def isAlive(self):
+        return not self.__poller.stopped()
 
 
 # the below is for reference
