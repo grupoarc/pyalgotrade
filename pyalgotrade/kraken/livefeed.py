@@ -76,7 +76,7 @@ class LiveBookFeed(barfeed.BaseBarFeed):
     # This may raise.
     def start(self):
         super(LiveBookFeed, self).start()
-        self.__poller.start()
+        if not self.__poller.is_alive(): self.__poller.start()
 
     def dispatch(self):
         # Note that we may return True even if we didn't dispatch any Bar

@@ -157,8 +157,8 @@ class KrakenRest(object):
         if not 'auth' in kwargs: kwargs['auth'] = self.auth()
         return self._request(method, url, **kwargs)
 
-    def _get(self, url, **kwargs): return self._request('GET', url, **kwargs).json()
-    def _getj(self, url, **kwargs): return self._get(url + 'public/', **kwargs).json()
+    def _get(self, url, **kwargs): return self._request('GET', url, **kwargs)
+    def _getj(self, url, **kwargs): return self._get('public/' + url, **kwargs).json()
     def _auth_getj(self, url, **kwargs): return self._auth_request('GET', 'private/' + url, **kwargs).json()
     def _auth_postj(self, url, **kwargs): return self._auth_request('POST', 'private/' + url, **kwargs).json()
 
