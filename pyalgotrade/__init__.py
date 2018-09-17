@@ -19,3 +19,12 @@
 """
 
 __version__ = "0.17"
+
+from enum import Enum
+
+class Symbol(Enum):
+    BTCUSD = 1
+    BTCEUR = 2
+
+    def __str__(self):
+        return self.name
