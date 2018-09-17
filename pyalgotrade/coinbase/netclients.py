@@ -5,9 +5,10 @@ import hmac, hashlib, time, requests, base64
 import ujson as json
 
 from requests.auth import AuthBase
+from pyalgotrade import Symbol
 from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
 
-BTCUSD, BTCEUR = 'BTCUSD', 'BTCEUR'
+BTCUSD, BTCEUR = Symbol.BTCUSD, Symbol.BTCEUR
 
 LOCAL_SYMBOL = { BTCUSD: 'BTC-USD', BTCEUR: 'BTC-EUR' }
 SYMBOL_LOCAL = { v: k for k, v in LOCAL_SYMBOL.items() }
