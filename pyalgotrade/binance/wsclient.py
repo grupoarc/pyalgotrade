@@ -17,11 +17,10 @@
 """
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
-
-import ujson as json
-from datetime import datetime
-import threading
+import pdb
 import Queue
+import threading
+from datetime import datetime
 
 from pyalgotrade import bar
 from pyalgotrade.broker import Order, OrderEvent, OrderExecutionInfo
@@ -30,7 +29,7 @@ from pyalgotrade.binance import common
 from pyalgotrade.orderbook import OrderBook, MarketUpdate
 from pyalgotrade.binance.streamsync import StreamSynchronizer
 
-from pyalgotrade.binance.netclients import toBookMessages, lazy_init
+from pyalgotrade.binance.netclients import toBookMessages, LOCAL_SYMBOL, BinanceRest
 
 
 def get_current_datetime():
@@ -64,28 +63,29 @@ class BinanceMatch(object):
 
     @property
     def datetime(self):
-        return datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
+        return datetime.fromtimestamp(self._j['T'])
 
     @property
-    def price(self): return float(self._j['price'])
+    def price(self): return float(self._j['p'])
 
     @property
-    def size(self): return float(self._j['size'])
+    def size(self): return float(self._j['q'])
 
     def involves(self, oidlist):
-        for oid in (self._j['maker_order_id'], self._j['taker_order_id']):
+        for oid in (self._j['a'], self._j['b']):
             if oid in oidlist: return oid
         return None
 
     @property
-    def seq(self): return int(self._j['sequence'])
+    def seq(self): return int(self._j['E'])
 
     def TradeBar(self):
         open_ = high = low = close = self.price
         volume = self.size
         adjClose = None
         freq = bar.Frequency.TRADE
-        dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
+        #dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
+        dir_ = TradeBar.DOWN if self._j['m'] else TradeBar.UP
         tbar = TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
         tbar._seq = self.seq
         return tbar
@@ -151,10 +151,19 @@ class WebSocketClient(WebSocketClientBase):
     ON_MATCH = object()
     ON_ORDER_CHANGE = object()
 
-    def __init__(self):
-        url = "wss://ws-feed.gdax.com"
-        super(WebSocketClient, self).__init__(url)
+    def __init__(self, symbol, key, secret):
+        self.symbol = symbol
+        localsym = LOCAL_SYMBOL[symbol].lower()
+        self._depth_stream = localsym + "@depth"
+        self._trade_stream = localsym + "@trade"
+        streams = [ self._depth_stream, self._trade_stream ]
+        url = "wss://stream.binance.com:9443/ws/" + '/'.join(streams)
+        #headers = [("X-MBX-APIKEY", key)]
+        headers = []
+        super(WebSocketClient, self).__init__(url, headers=headers)
         self.__queue = Queue.Queue()
+        self.__RESTClient = BinanceRest(key, secret)
+        common.logger.info("done with init")
 
     def getQueue(self):
         return self.__queue
@@ -164,13 +173,11 @@ class WebSocketClient(WebSocketClientBase):
     # WebSocketClientBase events.
 
     def onOpened(self):
+        common.logger.info("Connected")
         self.__queue.put((WebSocketClient.ON_CONNECTED, None))
-        common.logger.info("Connected; subscribing.")
-        subscribe = json.dumps({ "type": "subscribe", "product_id": "BTC-USD" })
-        self.send(subscribe)
         self._book = OrderBook()
 
-        ts_from_stream = lambda m: min(t.rts for t in m.data)
+        ts_from_stream = lambda m: m.U
         stream_newer_than_ts = lambda ts, m: m.data and ts_from_stream(m) > ts
 
         self.__syncr = StreamSynchronizer(ts_from_stream,
@@ -178,10 +185,9 @@ class WebSocketClient(WebSocketClientBase):
                                           self._apply_update,
                                           self._apply_full)
 
-        from pyalgotrade.binance.netclients import BinanceRest
-        data = BinanceRest(None, None, None).book_snapshot()
+        data = self.__RESTClient.book_snapshot()
         self.__syncr.submit_syncdata(data)
-        #common.logger.info("done opening")
+        common.logger.info("done opening")
 
     def _apply_update(self, u):
         self._book.update(u)
@@ -190,29 +196,28 @@ class WebSocketClient(WebSocketClientBase):
 
     def _apply_full(self, syncdata):
         self._book.update(syncdata)
-        #common.logger.info("got sync")
-        return syncdata.data[0].rts
+        common.logger.info("got sync")
+        return syncdata.data[0].U
 
 
     def onMessage(self, m):
-        mtype = m['type']
-        if mtype == 'heartbeat': return
-        if mtype == 'error':
-            common.logger.error("binance ws error: " + repr(m))
-            return
-        if not mtype in ('received', 'open', 'done', 'match', 'change'):
-            common.logger.warning("Unknown binance websocket msg: " + repr(m))
-            return
-        if mtype == 'match':
+        #is_depth = lambda : m['stream'] == self._depth_stream
+        #is_trade = lambda : m['stream'] == self._trade_stream
+        is_depth = lambda : m['e'] == "depthUpdate"
+        is_trade = lambda : m['e'] == "trade"
+        if is_depth():
+            # orderbook update
+            bms = toBookMessages(m, self.symbol)
+            u = MarketUpdate(ts=get_current_datetime(), data=bms)
+            self.__syncr.submit_streamdata(u)
+        elif is_trade():
+            # trade tick
             cbm = BinanceMatch(m)
             self.__queue.put((WebSocketClient.ON_MATCH, cbm))
             self.__queue.put((WebSocketClient.ON_TRADE, cbm.TradeBar()))
-        elif mtype in ('received', 'done'):
-            self.__queue.put((WebSocketClient.ON_ORDER_CHANGE, OrderStateChange(m)))
-        bms = toBookMessages(m, 'BTCUSD')
-        if bms:
-            u = MarketUpdate(ts=get_current_datetime(), data=bms)
-            self.__syncr.submit_streamdata(u)
+        else:
+            common.logger.error("Unknown Stream type in message: " + repr(m))
+            return
 
     def onClosed(self, code, reason):
         common.logger.info("Closed. Code: %s. Reason: %s." % (code, reason))
@@ -231,19 +236,26 @@ class WebSocketClient(WebSocketClientBase):
 
 
 class WebSocketClientThread(threading.Thread):
-    def __init__(self):
+    def __init__(self, *a, **kw):
         super(WebSocketClientThread, self).__init__()
-        self.__wsClient = WebSocketClient()
+        self.__wsClient = WebSocketClient(*a, **kw)
 
     def getQueue(self):
         return self.__wsClient.getQueue()
 
     def start(self):
+        common.logger.info("Connecting websocket client.")
         self.__wsClient.connect()
+        common.logger.info("Starting websocket client.")
         super(WebSocketClientThread, self).start()
+        common.logger.info("Done starting websocket client.")
+
 
     def run(self):
-        self.__wsClient.startClient()
+        self.__wsClient.setKeepAliveMgr(None)
+        common.logger.info("Running websocket startClient.")
+        self.__wsClient.startClient() # this is the tornado IOLoop
+        common.logger.info("Done running websocket startClient.")
 
     def stop(self):
         try:

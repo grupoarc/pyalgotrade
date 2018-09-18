@@ -25,6 +25,7 @@ import pyalgotrade.logger
 from pyalgotrade import broker
 from .netclients import BinanceRest as httpclient
 from pyalgotrade.orderbook import Bid, Ask
+from pyalgotrade import Symbol
 
 btc_symbol = 'BTC'
 logger = pyalgotrade.logger.getLogger("binance")
@@ -67,7 +68,7 @@ def build_order_from_open_order(openOrder, instrumentTraits=DEFAULT_TRAITS):
 
 
 class LiveBroker(broker.Broker):
-    """A Bitstamp live broker.
+    """A live broker.
 
     :param key: API key.
     :type key: string.
@@ -94,20 +95,35 @@ class LiveBroker(broker.Broker):
 
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(self, key, secret, passphrase, feed):
+    def __init__(self, key, secret, feed):
         super(LiveBroker, self).__init__()
         self.__stop = False
-        self.__httpClient = self.buildHTTPClient(key, secret, passphrase)
+        self.__httpClient = self.buildHTTPClient(key, secret)
         self.__tradeMonitor = feed
         self.__cash = 0
         self.__shares = {}
         self.__activeOrders = {}
         self.__userTradeQueue = Queue.Queue()
+        self.__symbol = feed.getDefaultInstrument()
+        print("__symbol is {!r}".format(self.__symbol))
 
         feed.getMatchEvent().subscribe(self.onMatchEvent)
         feed.getChangeEvent().subscribe(self.onChangeEvent)
 
         self.match_lag = None
+
+        #  Binance only quotes in BTC, ETH, USDT, and BNB
+        #  figure out which this is
+        def cc1cc2(sym):
+            ssym = str(sym)
+            for cc in ('BTC', 'ETH', 'USDT', 'BNB'):
+                if ssym.endswith(cc):
+                    return ssym[:-len(cc)], cc
+            raise ValueError("Not a valid Binance Symbol: {!s}".format(sym))
+
+        self.__cc1cc2 = cc1cc2(self.__symbol)
+
+
 
     def _registerOrder(self, order):
         assert(order.getId() not in self.__activeOrders)
@@ -120,34 +136,37 @@ class LiveBroker(broker.Broker):
         del self.__activeOrders[order.getId()]
 
     # Factory method for testing purposes.
-    def buildHTTPClient(self, key, secret, passphrase):
-        return httpclient(key, secret, passphrase)
+    def buildHTTPClient(self, key, secret):
+        return httpclient(key, secret)
 
     def refreshAccountBalance(self):
-        """Refreshes cash and BTC balance."""
+        """Refreshes quantities of all instruments"""
 
         self.__stop = True  # Stop running in case of errors.
         balance = self.__httpClient.balances()
 
-        # Cash
-        usd = float(balance.get('USD',0))
+        cc1, cc2 = self.__cc1cc2
+
+        # Cash aka cc2
+        usd = float(balance.get(cc2,0))
         self.__cash = round(usd, 2)
 
-        # BTC
-        btc = float(balance.get('BTC',0))
-        self.__shares = {btc_symbol: btc}
+        # Asset aka cc1
+        asset = float(balance.get(cc1,0))
+        self.__shares = {cc1+cc2: asset}
 
-        data = {'usd': self.__cash,
-                'btc': btc
+        data = {
+                'cc1': cc1, 'cc1_': asset,
+                'cc2': cc2, 'cc2_': self.__cash,
                }
 
-        logger.info("Account Balance: {usd} USD, {btc} BTC".format(**data))
+        logger.info("Account Balance: {cc2_} {cc2}, {cc1_} {cc1}".format(**data))
         self.__stop = False  # No errors. Keep running.
 
     def refreshOpenOrders(self):
         self.__stop = True  # Stop running in case of errors.
         logger.info("Retrieving open orders.")
-        openOrders = self.__httpClient.Orders(['open', 'pending', 'active'])
+        openOrders = self.__httpClient.open_Orders(symbol=self.__symbol) # if we don't specify a symbol, we get penalized
         for openOrder in openOrders:
             self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(btc_symbol)))
 

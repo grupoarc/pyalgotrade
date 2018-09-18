@@ -6,14 +6,14 @@ from urllib3.util import parse_url
 
 import requests
 import ujson as json
+from pyalgotrade import Symbol
 from requests.auth import AuthBase
 from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
 
-BTCUSD, BTCEUR = 'BTCUSD', 'BTCEUR'
-
-LOCAL_SYMBOL = { BTCUSD: 'BTC-USD', BTCEUR: 'BTC-EUR' }
+DEFAULT_SYMBOL = Symbol.BNBBTC
+SYMBOLS = [ Symbol.BNBBTC, Symbol.BNBETH ]
+LOCAL_SYMBOL = { s: str(s) for s in SYMBOLS  }
 SYMBOL_LOCAL = { v: k for k, v in LOCAL_SYMBOL.items() }
-SYMBOLS = list(LOCAL_SYMBOL.keys())
 VENUE = 'binance'
 
 
@@ -31,33 +31,22 @@ def fees(txnsize):
 
 def toBookMessages(binance_json, symbol):
     """convert a binance json message into a list of book messages"""
-    cbase = binance_json
-    if type(cbase) != dict:
-        cbase = json.loads(cbase)
-    cbt = cbase['type']
-    if cbt == 'received':
-        return []
-    if cbt == 'done' and cbase['order_type'] == 'market':
-        return []
-    side = { 'buy': Bid, 'sell': Ask }.get(cbase['side'], None)
-    if side is None: raise ValueError("Unknown side %r" % cbase['side'])
-    if not 'price' in cbase: return [] #change of a market order
-    price = cbase['price']
-    if cbt == 'done':
-        mtype, size = Decrease, cbase['remaining_size']
-    elif cbt == 'open':
-        mtype, size = Increase, cbase['remaining_size']
-    elif cbt == 'match':
-        mtype, size = Decrease, cbase['size']
-    elif cbt == 'change':
-        if price == 'null': return []
-        mtype = Decrease
-        size = flmath(float(cbase['old_size']) - float(cbase['new_size']))
-    else:
-        raise ValueError("Unknown binance message: %r" % cbase)
-    #rts = datetime.strptime(cbase['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
-    rts = int(cbase['sequence'])
-    return [mtype(rts, VENUE, symbol, float(price), float(size), side)]
+    m = binance_json
+    if type(m) != dict:
+        m = json.loads(m)
+
+    if e != "depthUpdate":
+        raise ValueError("Unknown binance event type: %r" % m)
+
+    rts = m["E"]
+
+    msgs = []
+    for a in m['a']:
+        msgs.append(Assign(rts, VENUE, symbol, float(a[0]), float(a[1]), Ask))
+    for b in m['b']:
+        msgs.append(Assign(rts, VENUE, symbol, float(b[0]), float(b[1]), Bid))
+
+    return msgs
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +180,7 @@ class BinanceRest(object):
     def _auth_delj(self, url, **kwargs): return self._auth_request('DELETE', url, **kwargs).json()
     def _sign_getj(self, url, **kwargs): return self._sign_request('GET', url, **kwargs).json()
     def _sign_postj(self, url, **kwargs): return self._sign_request('POST', url, **kwargs).json()
+    def _sign_delj(self, url, **kwargs): return self._sign_request('DELETE', url, **kwargs).json()
 
 
     #
@@ -202,13 +192,15 @@ class BinanceRest(object):
     def server_time(self):
         return self._getj('v1/time')
 
-    def book(self, symbol=BTCUSD, limit=100):
+    def exchange_info(self):
+        return self._getj('v1/exchangeInfo')
+
+    def book(self, symbol=DEFAULT_SYMBOL, limit=100):
         return self._getj('v1/depth', params={ 'symbol': symbol, 'limit': limit })
 
-    def trades(self, symbol=BTCUSD, limit=100):
+    def trades(self, symbol=DEFAULT_SYMBOL, limit=100):
         return self._getj('v1/trades', params={ 'symbol': symbol, 'limit': limit })
 
-    # historicalTrades, aggTrades, klines, ticker/24hr, ticker/price, ticker/bookTicker,
 
     #
     # Account (private endpoints)
@@ -217,19 +209,32 @@ class BinanceRest(object):
     def account(self):
         return self._sign_getj('v3/account')
 
+    def order(self, symbol, orderId):
+        return self._sign_getj('v3/order', params={ 'symbol': LOCAL_SYMBOL[symbol], 'orderId' : orderId })
+
+    def cancel(self, symbol, orderId):
+        return self._sign_delj('v3/order', params={ 'symbol': LOCAL_SYMBOL[symbol], 'orderId' : orderId })
+
+    def open_orders(self, symbol=None):
+        params = {'symbol': LOCAL_SYMBOL[symbol]} if symbol is not None else {}
+        return self._sign_getj('v3/openOrders', params=params)
+
+    #
+    # Cooked endpoints
+    #
+
     def balances(self):
         return { j['asset']: float(j['free']) for j in self.account().get('balances',[]) }
 
-    #
-    # Orders (private endpoints)
-    #
+    def tradeable(self):
+        results = []
+        for s in self.exchange_info()['symbols']:
+            results.append(s['baseAsset'] + s['quoteAsset'])
+        return results
 
-#    def orders(self, status='all'):
-#        return self._auth_getj('orders', params={'status': status})
-#
-#    def Orders(self, status='all'):
-#        return  [ BinanceOrder(**o) for o in self.orders(status) ]
-#
+    def open_Orders(self, *a, **kw):
+        return  [ BinanceOrder(**o) for o in self.open_orders(*a, **kw) ]
+
 #    def order_ids(self, status='all'):
 #        return [ o['id'] for o in self.orders(status) ]
 #
@@ -276,7 +281,7 @@ class BinanceRest(object):
             }
         return self._auth_postj('orders', json=params)
 
-    def limitorder(self, side, price, size, symbol=BTCUSD, flags=(), cancel_after=None):
+    def limitorder(self, side, price, size, symbol=DEFAULT_SYMBOL, flags=(), cancel_after=None):
         """Place a limit order"""
         bs = { Bid: "BUY", Ask: "SELL" }[side]
         params = {
@@ -298,7 +303,7 @@ class BinanceRest(object):
 
         return self._auth_postj('orders', json=params)['id']
 
-    def marketorder(self, side, size, symbol=BTCUSD):
+    def marketorder(self, side, size, symbol=DEFAULT_SYMBOL):
         """Place a market order"""
         bs = { Bid: "buy", Ask: "sell" }[side]
         params = {
@@ -314,13 +319,13 @@ class BinanceRest(object):
         if orderId is not None: url += '/' + orderId
         return self._auth_delj(url, raise_errors=raise_errors)
 
-    def book(self, symbol=BTCUSD, level=2, raw=False):
+    def book(self, symbol=DEFAULT_SYMBOL, level=2, raw=False):
         product = LOCAL_SYMBOL[symbol]
         book = self._get("products/" + product + "/book", params={'level':level})
         if raw: return book.text
         else: return book.json()
 
-    def book_snapshot(self, symbol=BTCUSD):
+    def book_snapshot(self, symbol=DEFAULT_SYMBOL):
         book = self.book(symbol)
         def mkassign(ts, price, size, side):
             return Assign(ts, VENUE, symbol, price, size, side)

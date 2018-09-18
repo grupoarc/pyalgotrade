@@ -27,8 +27,7 @@ from pyalgotrade import observer
 from pyalgotrade.binance import common
 from pyalgotrade.binance import wsclient
 
-
-class LiveTradeFeed(barfeed.BaseBarFeed):
+class LiveFeed(barfeed.BaseBarFeed):
 
     """A real-time BarFeed that builds bars from live trades.
 
@@ -43,10 +42,11 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(self, maxLen=None):
-        super(LiveTradeFeed, self).__init__(bar.Frequency.TRADE, maxLen)
+    def __init__(self, symbol, api_key, secret_key, maxLen=None):
+        super(LiveFeed, self).__init__(bar.Frequency.TRADE, maxLen)
+        self.__websocket_args = (symbol, api_key, secret_key)
         self.__barDicts = []
-        self.registerInstrument(common.btc_symbol)
+        self.registerInstrument(symbol)
         self.__prevTradeDateTime = None
         self.__thread = None
         self.__initializationOk = None
@@ -66,7 +66,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     # Factory method for testing purposes.
     def buildWebSocketClientThread(self):
-        return wsclient.WebSocketClientThread()
+        return wsclient.WebSocketClientThread(*self.__websocket_args)
 
     def getCurrentDateTime(self):
         return wsclient.get_current_datetime()
@@ -82,7 +82,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             # Start the thread that runs the client.
             self.__thread = self.buildWebSocketClientThread()
             self.__thread.start()
-        except Exception, e:
+        except Exception as e:
             self.__initializationOk = False
             common.logger.error("Error connecting : %s" % str(e))
 
@@ -115,7 +115,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     def __dispatchImpl(self, eventFilter):
         try:
-            eventType, eventData = self.__thread.getQueue().get(True, LiveTradeFeed.QUEUE_TIMEOUT)
+            eventType, eventData = self.__thread.getQueue().get(True, LiveFeed.QUEUE_TIMEOUT)
         except Queue.Empty:
             return False
 
@@ -145,7 +145,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
 
     # This may raise.
     def start(self):
-        super(LiveTradeFeed, self).start()
+        super(LiveFeed, self).start()
         if self.__thread is not None:
             pass
             #raise Exception("Already running")
@@ -158,7 +158,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
         # event.
         ret = False
         if self.__dispatchImpl(None): ret = True
-        if super(LiveTradeFeed, self).dispatch(): ret = True
+        if super(LiveFeed, self).dispatch(): ret = True
         return ret
 
     # This should not raise.
@@ -168,7 +168,7 @@ class LiveTradeFeed(barfeed.BaseBarFeed):
             if self.__thread is not None and self.__thread.is_alive():
                 common.logger.info("Shutting down websocket client.")
                 self.__thread.stop()
-        except Exception, e:
+        except Exception as e:
             common.logger.error("Error shutting down client: %s" % (str(e)))
 
     def isAlive(self):
