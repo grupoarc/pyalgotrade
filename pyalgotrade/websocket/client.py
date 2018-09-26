@@ -25,7 +25,6 @@ from ws4py.client import tornadoclient
 import tornado
 import pyalgotrade.logger
 
-
 logger = pyalgotrade.logger.getLogger("websocket.client")
 
 
@@ -59,9 +58,9 @@ class KeepAliveMgr(object):
                 self.__kaSent = time.time()
             elif (time.time() - self.__kaSent) > self.__responseTimeout:
                 self.__wsClient.onDisconnectionDetected()
-        except Exception:
+        except Exception as e:
             # Treat an error sending the keep-alive as a diconnection.
-            # print "Error sending keep alive", e
+            print("Error sending keep alive", e)
             self.__wsClient.onDisconnectionDetected()
 
     def getWSClient(self):
@@ -92,13 +91,16 @@ class KeepAliveMgr(object):
 # Base clase for websocket clients.
 # To use it call connect and startClient, and stopClient.
 class WebSocketClientBase(tornadoclient.TornadoWebSocketClient):
-    def __init__(self, url):
-        super(WebSocketClientBase, self).__init__(url)
+    def __init__(self, url, *a, **kw):
+        super(WebSocketClientBase, self).__init__(url, *a, **kw)
         self.__keepAliveMgr = None
         self.__connected = False
+        self.__ioloop = tornado.ioloop.IOLoop.current()
+        logger.debug("initing websocketclientbase")
 
     # This is to avoid a stack trace because TornadoWebSocketClient is not implementing _cleanup.
     def _cleanup(self):
+        logger.debug("cleaning up")
         ret = None
         try:
             ret = super(WebSocketClientBase, self)._cleanup()
@@ -107,15 +109,17 @@ class WebSocketClientBase(tornadoclient.TornadoWebSocketClient):
         return ret
 
     def getIOLoop(self):
-        return tornado.ioloop.IOLoop.instance()
+        return self.__ioloop
 
     # Must be set before calling startClient().
     def setKeepAliveMgr(self, keepAliveMgr):
+        logger.debug("setting KeepAliveMgr to : "+ repr(keepAliveMgr))
         if self.__keepAliveMgr is not None:
             raise Exception("KeepAliveMgr already set")
         self.__keepAliveMgr = keepAliveMgr
 
     def received_message(self, message):
+        #logger.debug("got message: " + str(message))
         try:
             msg = json.loads(message.data)
 
@@ -125,10 +129,11 @@ class WebSocketClientBase(tornadoclient.TornadoWebSocketClient):
                     return
 
             self.onMessage(msg)
-        except Exception, e:
+        except Exception as e:
             self.onUnhandledException(e)
 
     def opened(self):
+        logger.debug("opened")
         self.__connected = True
         if self.__keepAliveMgr is not None:
             self.__keepAliveMgr.start()
@@ -136,12 +141,13 @@ class WebSocketClientBase(tornadoclient.TornadoWebSocketClient):
         self.onOpened()
 
     def closed(self, code, reason=None):
+        logger.debug("closed")
         wasConnected = self.__connected
         self.__connected = False
         if self.__keepAliveMgr:
             self.__keepAliveMgr.stop()
             self.__keepAliveMgr = None
-        tornado.ioloop.IOLoop.instance().stop()
+        self.__ioloop.stop()
 
         if wasConnected:
             self.onClosed(code, reason)
@@ -150,14 +156,17 @@ class WebSocketClientBase(tornadoclient.TornadoWebSocketClient):
         return self.__connected
 
     def startClient(self):
-        tornado.ioloop.IOLoop.instance().start()
+        logger.debug("Starting IOLoop")
+        self.__ioloop.start()
+        logger.debug("IOLoop started")
 
     def stopClient(self):
+        logger.debug("Stopping Client")
         try:
             if self.__connected:
                 self.close()
             self.close_connection()
-        except Exception, e:
+        except Exception as e:
             logger.warning("Failed to close connection: %s" % (e))
 
     ######################################################################
@@ -165,6 +174,7 @@ class WebSocketClientBase(tornadoclient.TornadoWebSocketClient):
 
     def onUnhandledException(self, exception):
         logger.critical("Unhandled exception", exc_info=exception)
+        self.stopClient()
         raise
 
     def onOpened(self):

@@ -18,11 +18,15 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
+import logging
+
 import pyalgotrade.logger
 from pyalgotrade import broker
 
 
 logger = pyalgotrade.logger.getLogger("binance")
+logger.setLevel(logging.DEBUG)
+
 btc_symbol = "BTC"
 
 

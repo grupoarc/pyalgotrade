@@ -35,10 +35,13 @@ def toBookMessages(binance_json, symbol):
     if type(m) != dict:
         m = json.loads(m)
 
-    if e != "depthUpdate":
+    if m['e'] != "depthUpdate":
         raise ValueError("Unknown binance event type: %r" % m)
 
-    rts = m["E"]
+    rts = m.get("u") or m.get('lastUpdateId')
+    # their REST book endpoint (depth) doesn't give a time,it give a 'lastUpdateID'
+    # while their streamingupdates give both.  But we have to sync, so we use the
+    # updateID to sync on, so it becomes our clock
 
     msgs = []
     for a in m['a']:
@@ -235,6 +238,23 @@ class BinanceRest(object):
     def open_Orders(self, *a, **kw):
         return  [ BinanceOrder(**o) for o in self.open_orders(*a, **kw) ]
 
+    def book_snapshot(self, symbol=DEFAULT_SYMBOL):
+        book = self.book(symbol)
+        def mkassign(ts, price, size, side):
+            return Assign(ts, VENUE, symbol, price, size, side)
+        rts = book['lastUpdateId']
+        price = lambda e: float(e[0])
+        size = lambda e: float(e[1])
+        return MarketSnapshot(time.time(), VENUE, symbol,
+            [ mkassign(rts, price(e), size(e), Bid) for e in book['bids'] ] +
+            [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]
+        )
+
+
+
+
+
+
 #    def order_ids(self, status='all'):
 #        return [ o['id'] for o in self.orders(status) ]
 #
@@ -267,80 +287,80 @@ class BinanceRest(object):
 #    def fills(self, order_id):
 #        params = { 'order_id': order_id }
 #        return self._auth_getj('fills', params=params)
-
-    def place_order(self, order):
-        params = {
-            'type' : order.order_type,
-            'side' : order.side,
-            'product_id' : order.product,
-            'stp' : order.stp,
-            'price' : order.price,
-            'size' : order.size,
-            'time_in_force' : order.time_in_force,
-            'cancel_after' : order.cancel_after
-            }
-        return self._auth_postj('orders', json=params)
-
-    def limitorder(self, side, price, size, symbol=DEFAULT_SYMBOL, flags=(), cancel_after=None):
-        """Place a limit order"""
-        bs = { Bid: "BUY", Ask: "SELL" }[side]
-        params = {
-            'symbol' : LOCAL_SYMBOL[symbol],
-            'side' : bs,
-            'type' : 'LIMIT',
-            'quantity' : size,
-            'price' : price,
-            }
-        if self.GTT in flags:
-            if cancel_after is None: raise ValueError("No cancel time specified")
-            params['time_in_force'] = 'GTT'
-            params['cancel_after'] = cancel_after
-        if self.POST_ONLY in flags: params['post_only'] = True
-        elif not self.GTT in flags:
-            if self.GTC in flags: params['time_in_force'] = 'GTC'
-            elif self.IOC in flags: params['time_in_force'] = 'IOC'
-            elif self.FOK in flags: params['time_in_force'] = 'FOK'
-
-        return self._auth_postj('orders', json=params)['id']
-
-    def marketorder(self, side, size, symbol=DEFAULT_SYMBOL):
-        """Place a market order"""
-        bs = { Bid: "buy", Ask: "sell" }[side]
-        params = {
-            'type' : 'market',
-            'side' : bs,
-            'product_id' : LOCAL_SYMBOL[symbol],
-            'size' : size
-            }
-        return self._auth_postj('orders', json=params)['id']
-
-    def cancel(self, orderId=None, raise_errors=False):
-        url = 'orders'
-        if orderId is not None: url += '/' + orderId
-        return self._auth_delj(url, raise_errors=raise_errors)
-
-    def book(self, symbol=DEFAULT_SYMBOL, level=2, raw=False):
-        product = LOCAL_SYMBOL[symbol]
-        book = self._get("products/" + product + "/book", params={'level':level})
-        if raw: return book.text
-        else: return book.json()
-
-    def book_snapshot(self, symbol=DEFAULT_SYMBOL):
-        book = self.book(symbol)
-        def mkassign(ts, price, size, side):
-            return Assign(ts, VENUE, symbol, price, size, side)
-        rts = book['sequence']
-        price = lambda e: float(e[0])
-        size = lambda e: float(e[1])
-        return MarketSnapshot(time.time(), VENUE, symbol,
-            [ mkassign(rts, price(e), size(e), Bid) for e in book['bids'] ] +
-            [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]
-        )
-
-    def inside_bid_ask(self):
-        book = self.book(level=1)
-        bid = book['bids'][0][0]
-        ask = book['asks'][0][0]
-        #log.info("Got inside bid: {} ask: {}".format(bid, ask))
-        return bid, ask
-
+#
+#    def place_order(self, order):
+#        params = {
+#            'type' : order.order_type,
+#            'side' : order.side,
+#            'product_id' : order.product,
+#            'stp' : order.stp,
+#            'price' : order.price,
+#            'size' : order.size,
+#            'time_in_force' : order.time_in_force,
+#            'cancel_after' : order.cancel_after
+#            }
+#        return self._auth_postj('orders', json=params)
+#
+#    def limitorder(self, side, price, size, symbol=DEFAULT_SYMBOL, flags=(), cancel_after=None):
+#        """Place a limit order"""
+#        bs = { Bid: "BUY", Ask: "SELL" }[side]
+#        params = {
+#            'symbol' : LOCAL_SYMBOL[symbol],
+#            'side' : bs,
+#            'type' : 'LIMIT',
+#            'quantity' : size,
+#            'price' : price,
+#            }
+#        if self.GTT in flags:
+#            if cancel_after is None: raise ValueError("No cancel time specified")
+#            params['time_in_force'] = 'GTT'
+#            params['cancel_after'] = cancel_after
+#        if self.POST_ONLY in flags: params['post_only'] = True
+#        elif not self.GTT in flags:
+#            if self.GTC in flags: params['time_in_force'] = 'GTC'
+#            elif self.IOC in flags: params['time_in_force'] = 'IOC'
+#            elif self.FOK in flags: params['time_in_force'] = 'FOK'
+#
+#        return self._auth_postj('orders', json=params)['id']
+#
+#    def marketorder(self, side, size, symbol=DEFAULT_SYMBOL):
+#        """Place a market order"""
+#        bs = { Bid: "buy", Ask: "sell" }[side]
+#        params = {
+#            'type' : 'market',
+#            'side' : bs,
+#            'product_id' : LOCAL_SYMBOL[symbol],
+#            'size' : size
+#            }
+#        return self._auth_postj('orders', json=params)['id']
+#
+#    def cancel(self, orderId=None, raise_errors=False):
+#        url = 'orders'
+#        if orderId is not None: url += '/' + orderId
+#        return self._auth_delj(url, raise_errors=raise_errors)
+#
+#    def book(self, symbol=DEFAULT_SYMBOL, level=2, raw=False):
+#        product = LOCAL_SYMBOL[symbol]
+#        book = self._get("products/" + product + "/book", params={'level':level})
+#        if raw: return book.text
+#        else: return book.json()
+#
+#    def book_snapshot(self, symbol=DEFAULT_SYMBOL):
+#        book = self.book(symbol)
+#        def mkassign(ts, price, size, side):
+#            return Assign(ts, VENUE, symbol, price, size, side)
+#        rts = book['sequence']
+#        price = lambda e: float(e[0])
+#        size = lambda e: float(e[1])
+#        return MarketSnapshot(time.time(), VENUE, symbol,
+#            [ mkassign(rts, price(e), size(e), Bid) for e in book['bids'] ] +
+#            [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]
+#        )
+#
+#    def inside_bid_ask(self):
+#        book = self.book(level=1)
+#        bid = book['bids'][0][0]
+#        ask = book['asks'][0][0]
+#        #log.info("Got inside bid: {} ask: {}".format(bid, ask))
+#        return bid, ask
+#

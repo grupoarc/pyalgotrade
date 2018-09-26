@@ -17,7 +17,7 @@
 """
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
-import pdb
+
 import Queue
 import threading
 from datetime import datetime
@@ -30,6 +30,17 @@ from pyalgotrade.orderbook import OrderBook, MarketUpdate
 from pyalgotrade.binance.streamsync import StreamSynchronizer
 
 from pyalgotrade.binance.netclients import toBookMessages, LOCAL_SYMBOL, BinanceRest
+
+import logging
+
+access_log = logging.getLogger("tornado.access")
+access_log.setLevel(logging.DEBUG)
+app_log = logging.getLogger("tornado.application")
+app_log.setLevel(logging.DEBUG)
+gen_log = logging.getLogger("tornado.general")
+gen_log.setLevel(logging.DEBUG)
+
+
 
 
 def get_current_datetime():
@@ -63,7 +74,7 @@ class BinanceMatch(object):
 
     @property
     def datetime(self):
-        return datetime.fromtimestamp(self._j['T'])
+        return datetime.fromtimestamp(self._j['T']/1000)
 
     @property
     def price(self): return float(self._j['p'])
@@ -160,10 +171,10 @@ class WebSocketClient(WebSocketClientBase):
         url = "wss://stream.binance.com:9443/ws/" + '/'.join(streams)
         #headers = [("X-MBX-APIKEY", key)]
         headers = []
-        super(WebSocketClient, self).__init__(url, headers=headers)
+        common.logger.info("Initializing connection to " + url + " with headers: " + repr(headers))
         self.__queue = Queue.Queue()
         self.__RESTClient = BinanceRest(key, secret)
-        common.logger.info("done with init")
+        super(WebSocketClient, self).__init__(url, headers=headers)
 
     def getQueue(self):
         return self.__queue
@@ -177,8 +188,10 @@ class WebSocketClient(WebSocketClientBase):
         self.__queue.put((WebSocketClient.ON_CONNECTED, None))
         self._book = OrderBook()
 
-        ts_from_stream = lambda m: m.U
-        stream_newer_than_ts = lambda ts, m: m.data and ts_from_stream(m) > ts
+        ts_from_stream = lambda m: min(t.rts for t in m.data)
+        #stream_newer_than_ts = lambda ts, m: m.data and ts_from_stream(m) > ts
+        def stream_newer_than_ts(ts, m):
+            return m.data and ts_from_stream(m) >ts
 
         self.__syncr = StreamSynchronizer(ts_from_stream,
                                           stream_newer_than_ts,
@@ -187,7 +200,6 @@ class WebSocketClient(WebSocketClientBase):
 
         data = self.__RESTClient.book_snapshot()
         self.__syncr.submit_syncdata(data)
-        common.logger.info("done opening")
 
     def _apply_update(self, u):
         self._book.update(u)
@@ -197,7 +209,7 @@ class WebSocketClient(WebSocketClientBase):
     def _apply_full(self, syncdata):
         self._book.update(syncdata)
         common.logger.info("got sync")
-        return syncdata.data[0].U
+        return syncdata.data[0].rts
 
 
     def onMessage(self, m):
@@ -208,7 +220,7 @@ class WebSocketClient(WebSocketClientBase):
         if is_depth():
             # orderbook update
             bms = toBookMessages(m, self.symbol)
-            u = MarketUpdate(ts=get_current_datetime(), data=bms)
+            u = MarketUpdate(ts=bms[0].rts, data=bms)
             self.__syncr.submit_streamdata(u)
         elif is_trade():
             # trade tick
@@ -239,23 +251,21 @@ class WebSocketClientThread(threading.Thread):
     def __init__(self, *a, **kw):
         super(WebSocketClientThread, self).__init__()
         self.__wsClient = WebSocketClient(*a, **kw)
+        self.__wsClient.setKeepAliveMgr(None) # send no keepalives
 
     def getQueue(self):
         return self.__wsClient.getQueue()
 
     def start(self):
-        common.logger.info("Connecting websocket client.")
+        common.logger.info("Connecting websocket client and starting thread.")
         self.__wsClient.connect()
-        common.logger.info("Starting websocket client.")
         super(WebSocketClientThread, self).start()
-        common.logger.info("Done starting websocket client.")
+        common.logger.info("Websocket client thread started.")
 
 
     def run(self):
-        self.__wsClient.setKeepAliveMgr(None)
-        common.logger.info("Running websocket startClient.")
+        common.logger.info("Starting websocket client in client thread.")
         self.__wsClient.startClient() # this is the tornado IOLoop
-        common.logger.info("Done running websocket startClient.")
 
     def stop(self):
         try:

@@ -1,8 +1,10 @@
 
 
+from pyalgotrade.binance.common import logger
+
 def noop(*args, **kwargs): pass
 
-log = noop
+log = logger.debug
 
 class StreamSynchronizer(object):
     """

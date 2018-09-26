@@ -110,7 +110,7 @@ class OrderBook():
 
     def marketsnapshot(self):
         """Return the OrderBook as a MarketSnapshot"""
-        data = self.bids.values() + self.asks.values()
+        data = list(self.bids.values()) + list(self.asks.values())
         return MarketSnapshot(time.time(), self.venue, self.symbol, data)
 
     @classmethod
