@@ -6,15 +6,11 @@ from urllib3.util import parse_url
 
 import requests
 import ujson as json
-from pyalgotrade import Symbol
 from requests.auth import AuthBase
-from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
 
-DEFAULT_SYMBOL = Symbol.BNBBTC
-SYMBOLS = [ Symbol.BNBBTC, Symbol.BNBETH ]
-LOCAL_SYMBOL = { s: str(s) for s in SYMBOLS  }
-SYMBOL_LOCAL = { v: k for k, v in LOCAL_SYMBOL.items() }
-VENUE = 'binance'
+from ..broker import FloatTraits
+from ..orderbook import Ask, Bid, Assign, MarketSnapshot
+from . import VENUE, DEFAULT_SYMBOL, LOCAL_SYMBOL
 
 
 def flmath(n):
@@ -22,7 +18,6 @@ def flmath(n):
 
 def fees(txnsize):
     return flmath(txnsize * float('0.0025'))
-
 
 # ---------------------------------------------------------------------------
 #  Binance market data message helper / decoder
@@ -250,117 +245,6 @@ class BinanceRest(object):
             [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]
         )
 
+    def instrumentTraits(self):
+        return { s['symbol']: FloatTraits(s['baseAssetPrecision'], s['quotePrecision']) for s in self.exchange_info()['symbols'] }
 
-
-
-
-
-#    def order_ids(self, status='all'):
-#        return [ o['id'] for o in self.orders(status) ]
-#
-#    def order_statuses(self):
-#        return [ o['status'] for o in self.orders() ]
-#
-#    def order(self, id):
-#        """
-#        {
-#        "id": "d50ec984-77a8-460a-b958-66f114b0de9b",
-#        "size": "3.0",
-#        "price": "100.23",
-#        "done_reason": "canceled",
-#        "status": "done",
-#        "settled": true,
-#        "filled_size": "1.3",
-#        "executed_value": "3.69",
-#        "product_id": "BTC-USD",
-#        "fill_fees": "0.001",
-#        "side": "buy",
-#        "created_at": "2014-11-14T06:39:55.189376Z",
-#        "done_at": "2014-11-14T06:39:57.605998Z"
-#    	}
-#        """
-#        return self._auth_getj('orders/' + str(id))
-#
-#    def Order(self, id):
-#        return BinanceOrder(**(self.order(id)))
-#
-#    def fills(self, order_id):
-#        params = { 'order_id': order_id }
-#        return self._auth_getj('fills', params=params)
-#
-#    def place_order(self, order):
-#        params = {
-#            'type' : order.order_type,
-#            'side' : order.side,
-#            'product_id' : order.product,
-#            'stp' : order.stp,
-#            'price' : order.price,
-#            'size' : order.size,
-#            'time_in_force' : order.time_in_force,
-#            'cancel_after' : order.cancel_after
-#            }
-#        return self._auth_postj('orders', json=params)
-#
-#    def limitorder(self, side, price, size, symbol=DEFAULT_SYMBOL, flags=(), cancel_after=None):
-#        """Place a limit order"""
-#        bs = { Bid: "BUY", Ask: "SELL" }[side]
-#        params = {
-#            'symbol' : LOCAL_SYMBOL[symbol],
-#            'side' : bs,
-#            'type' : 'LIMIT',
-#            'quantity' : size,
-#            'price' : price,
-#            }
-#        if self.GTT in flags:
-#            if cancel_after is None: raise ValueError("No cancel time specified")
-#            params['time_in_force'] = 'GTT'
-#            params['cancel_after'] = cancel_after
-#        if self.POST_ONLY in flags: params['post_only'] = True
-#        elif not self.GTT in flags:
-#            if self.GTC in flags: params['time_in_force'] = 'GTC'
-#            elif self.IOC in flags: params['time_in_force'] = 'IOC'
-#            elif self.FOK in flags: params['time_in_force'] = 'FOK'
-#
-#        return self._auth_postj('orders', json=params)['id']
-#
-#    def marketorder(self, side, size, symbol=DEFAULT_SYMBOL):
-#        """Place a market order"""
-#        bs = { Bid: "buy", Ask: "sell" }[side]
-#        params = {
-#            'type' : 'market',
-#            'side' : bs,
-#            'product_id' : LOCAL_SYMBOL[symbol],
-#            'size' : size
-#            }
-#        return self._auth_postj('orders', json=params)['id']
-#
-#    def cancel(self, orderId=None, raise_errors=False):
-#        url = 'orders'
-#        if orderId is not None: url += '/' + orderId
-#        return self._auth_delj(url, raise_errors=raise_errors)
-#
-#    def book(self, symbol=DEFAULT_SYMBOL, level=2, raw=False):
-#        product = LOCAL_SYMBOL[symbol]
-#        book = self._get("products/" + product + "/book", params={'level':level})
-#        if raw: return book.text
-#        else: return book.json()
-#
-#    def book_snapshot(self, symbol=DEFAULT_SYMBOL):
-#        book = self.book(symbol)
-#        def mkassign(ts, price, size, side):
-#            return Assign(ts, VENUE, symbol, price, size, side)
-#        rts = book['sequence']
-#        price = lambda e: float(e[0])
-#        size = lambda e: float(e[1])
-#        return MarketSnapshot(time.time(), VENUE, symbol,
-#            [ mkassign(rts, price(e), size(e), Bid) for e in book['bids'] ] +
-#            [ mkassign(rts, price(e), size(e), Ask) for e in book['asks'] ]
-#        )
-#
-#    def inside_bid_ask(self):
-#        book = self.book(level=1)
-#        bid = book['bids'][0][0]
-#        ask = book['asks'][0][0]
-#        #log.info("Got inside bid: {} ask: {}".format(bid, ask))
-#        return bid, ask
-#

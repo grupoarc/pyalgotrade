@@ -46,6 +46,7 @@ class LiveFeed(barfeed.BaseBarFeed):
         super(LiveFeed, self).__init__(bar.Frequency.TRADE, maxLen)
         self.__websocket_args = (symbol, api_key, secret_key)
         self.__barDicts = []
+        self.__symbol = symbol
         self.registerInstrument(symbol)
         self.__prevTradeDateTime = None
         self.__thread = None
@@ -108,7 +109,7 @@ class LiveFeed(barfeed.BaseBarFeed):
             self.__stopped = True
 
     def __onTrade(self, eventData):
-        self.__barDicts.append({ common.btc_symbol: eventData })
+        self.__barDicts.append({ self.__symbol: eventData })
 
     def __onConnected(self, eventData):
         self.__initializationOk = True

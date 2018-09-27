@@ -37,10 +37,30 @@ class InstrumentTraits(object):
     def roundQuantity(self, quantity):
         raise NotImplementedError()
 
+    # Return the floating point value number rounded.
+    @abc.abstractmethod
+    def roundPrice(self, quantity):
+        raise NotImplementedError()
+
 
 class IntegerTraits(InstrumentTraits):
     def roundQuantity(self, quantity):
         return int(quantity)
+
+    def roundPrice(self, price):
+        return int(price)
+
+
+class FloatTraits(InstrumentTraits):
+    def __init__(self, qtyprec, priceprec=None):
+        self.__qtyprec = qtyprec
+        self.__priceprec = priceprec
+
+    def roundQuantity(self, quantity):
+        return round(quantity, self.__qtyprec)
+
+    def roundPrice(self, price):
+        return round(price, self.__priceprec)
 
 
 ######################################################################

@@ -21,13 +21,13 @@
 import logging
 
 import pyalgotrade.logger
-from pyalgotrade import broker
+from pyalgotrade import broker, Symbol
 
 
 logger = pyalgotrade.logger.getLogger("binance")
 logger.setLevel(logging.DEBUG)
 
-btc_symbol = "BTC"
+btc_symbol = Symbol.BTC
 
 
 class BTCTraits(broker.InstrumentTraits):

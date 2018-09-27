@@ -22,9 +22,9 @@ __version__ = "0.17"
 
 from enum import Enum
 
-CCYs = ('BTC', 'USD', 'EUR', 'LTC', 'ETH', 'BCH', 'ETC', 'EOS', 'XRP', 'USDT', 'BNB')
+CCYs = ['BTC', 'USD', 'EUR', 'LTC', 'ETH', 'BCH', 'ETC', 'EOS', 'XRP', 'USDT', 'BNB']
 
-Symbol = Enum('Symbol', ' '.join([c1+c2 for c1 in CCYs for c2 in CCYs if c1 != c2]))
+Symbol = Enum('Symbol', ' '.join(CCYs + [c1+c2 for c1 in CCYs for c2 in CCYs if c1 != c2]))
 
 Symbol.__str__ = lambda self: self.name
 

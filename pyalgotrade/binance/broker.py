@@ -21,7 +21,7 @@
 import threading
 from datetime import datetime
 
-from pyalgotrade import bar
+from pyalgotrade import bar, Symbol
 from pyalgotrade import broker
 from pyalgotrade.broker import backtesting, MarketOrder
 from pyalgotrade.binance import common
@@ -113,8 +113,8 @@ class BacktestingBroker(backtesting.Broker):
             if totalprice > self.getCash(False):
                 raise Exception("Not enough cash")
         elif action == broker.Order.Action.SELL:
-            if quantity > self.getShares(common.btc_symbol):
-                raise Exception("Not enough %s" % (common.btc_symbol))
+            if quantity > self.getShares(instrument):
+                raise Exception("Not enough %s" % (instrument))
         else:
             raise Exception("Only BUY/SELL orders are supported")
 
@@ -138,7 +138,7 @@ class BacktestingBroker(backtesting.Broker):
        return super(BacktestingBroker, self).createMarketOrder(action, instrument, quantity, onClose)
 
     def createLimitOrder(self, action, instrument, limitPrice, quantity):
-        if instrument != common.btc_symbol:
+        if instrument != Symbol.BTC:
             raise Exception("Only BTC instrument is supported")
 
         action = self._remap_action(action)

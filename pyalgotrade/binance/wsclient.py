@@ -74,7 +74,7 @@ class BinanceMatch(object):
 
     @property
     def datetime(self):
-        return datetime.fromtimestamp(self._j['T']/1000)
+        return datetime.fromtimestamp(self._j['T']/1000.0)
 
     @property
     def price(self): return float(self._j['p'])
@@ -102,53 +102,6 @@ class BinanceMatch(object):
         return tbar
 
 
-
-class OrderStateChange(object):
-
-    def __init__(self, json):
-        self._j = json
-        self._id = None
-        self._price = None
-        self._new_state, self._event_type = None, None
-
-    @property
-    def id(self):
-        if self._id is None: self.__parse()
-        return self._id
-
-    @property
-    def new_state(self):
-        if self._id is None: self.__parse()
-        return self._new_state
-
-    @property
-    def event_type(self):
-        if self._id is None: self.__parse()
-        return self._event_type
-
-    def __parse(self):
-        json = self._j
-        self._id = json['order_id']
-        mtype = json['type']
-        s, e = None, None
-        if mtype == 'received':
-            s, e =  Order.State.ACCEPTED, OrderEvent.Type.ACCEPTED
-        elif mtype == 'done':
-            if json['reason'] == 'filled' and json.get('remaining_size', None) == '0':
-                s, e = Order.State.FILLED, OrderEvent.Type.FILLED
-            else:
-                s, e = Order.State.CANCELED, OrderEvent.Type.CANCELED
-        price = json.get('price', None)
-        self._price = float(price) if price is not None else None
-        self._new_state, self._event_type = s, e
-
-    def oei(self, order):
-        if self._j.get('reason','') != 'filled': return None
-        dt = datetime.strptime(self._j['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
-        ounfilled = order.getQuantity() - order.getFilled()
-        sizeleft = float(self._j.get('remaining_size', 0.0))
-        if self._price is None: self.__parse()
-        return OrderExecutionInfo(self._price, ounfilled - sizeleft, 0, dt)
 
 
 

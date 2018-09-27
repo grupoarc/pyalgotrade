@@ -22,21 +22,16 @@ import Queue
 from datetime import datetime
 
 import pyalgotrade.logger
-from pyalgotrade import broker
-from .netclients import BinanceRest as httpclient
+from pyalgotrade import broker, Symbol
 from pyalgotrade.orderbook import Bid, Ask
-from pyalgotrade import Symbol
 
-btc_symbol = 'BTC'
+from . import cc1cc2
+from .netclients import BinanceRest as httpclient
+
 logger = pyalgotrade.logger.getLogger("binance")
 
-class BTCTraits(broker.InstrumentTraits):
-    def roundQuantity(self, quantity):
-        return round(quantity, 8)
 
-DEFAULT_TRAITS = BTCTraits()
-
-def build_order_from_open_order(openOrder, instrumentTraits=DEFAULT_TRAITS):
+def build_order_from_open_order(openOrder, instrumentTraits):
     if openOrder.side == 'buy':
         action = broker.Order.Action.BUY
     elif openOrder.side == 'sell':
@@ -49,10 +44,10 @@ def build_order_from_open_order(openOrder, instrumentTraits=DEFAULT_TRAITS):
         size = float(openOrder.filled_size)
     if 'price' in openOrder: # limit order
         price = float(openOrder.price)
-        ret = broker.LimitOrder(action, btc_symbol, price, size, instrumentTraits)
+        ret = broker.LimitOrder(action, openOrder.symbol, price, size, instrumentTraits)
     else:  # Market order
         onClose = False # TBD
-        ret = broker.MarketOrder(action, btc_symbol, size, onClose, instrumentTraits)
+        ret = broker.MarketOrder(action, openOrder.symbol, size, onClose, instrumentTraits)
     ret.setSubmitted(openOrder.id, openOrder.created_at)
     if 'done_at' not in openOrder:
         if 'filled_size' in openOrder:
@@ -105,24 +100,12 @@ class LiveBroker(broker.Broker):
         self.__activeOrders = {}
         self.__userTradeQueue = Queue.Queue()
         self.__symbol = feed.getDefaultInstrument()
-        print("__symbol is {!r}".format(self.__symbol))
+        self.__cc1cc2 = cc1cc2(self.__symbol)
 
         feed.getMatchEvent().subscribe(self.onMatchEvent)
         feed.getChangeEvent().subscribe(self.onChangeEvent)
 
         self.match_lag = None
-
-        #  Binance only quotes in BTC, ETH, USDT, and BNB
-        #  figure out which this is
-        def cc1cc2(sym):
-            ssym = str(sym)
-            for cc in ('BTC', 'ETH', 'USDT', 'BNB'):
-                if ssym.endswith(cc):
-                    return ssym[:-len(cc)], cc
-            raise ValueError("Not a valid Binance Symbol: {!s}".format(sym))
-
-        self.__cc1cc2 = cc1cc2(self.__symbol)
-
 
 
     def _registerOrder(self, order):
@@ -168,7 +151,7 @@ class LiveBroker(broker.Broker):
         logger.info("Retrieving open orders.")
         openOrders = self.__httpClient.open_Orders(symbol=self.__symbol) # if we don't specify a symbol, we get penalized
         for openOrder in openOrders:
-            self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(btc_symbol)))
+            self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(self.__symbol)))
 
         logger.info("%d open order/s found" % (len(openOrders)))
         self.__stop = False  # No errors. Keep running.
@@ -299,7 +282,7 @@ class LiveBroker(broker.Broker):
         return self.__cash
 
     def getInstrumentTraits(self, instrument):
-        return BTCTraits()
+        return self.__httpClient.instrumentTraits()[instrument]
 
     def getShares(self, instrument):
         return self.__shares.get(instrument, 0)
@@ -339,8 +322,8 @@ class LiveBroker(broker.Broker):
 
     def _createOrder(self, orderType, action, instrument, quantity, price):
 
-        if instrument != btc_symbol:
-            raise Exception("Only BTC instrument is supported")
+        if instrument != self.__symbol:
+            raise Exception("Only %r instrument is supported" % self.__symbol)
 
         action = {
             broker.Order.Action.BUY_TO_COVER: broker.Order.Action.BUY,
@@ -353,7 +336,7 @@ class LiveBroker(broker.Broker):
 
         instrumentTraits = self.getInstrumentTraits(instrument)
         quantity = instrumentTraits.roundQuantity(quantity)
-        price = round(price, 2)
+        price = instrumentTraits.roundPrice(price)
         if orderType == broker.MarketOrder:
             return orderType(action, instrument, quantity, False, instrumentTraits)
         elif orderType == broker.LimitOrder:
