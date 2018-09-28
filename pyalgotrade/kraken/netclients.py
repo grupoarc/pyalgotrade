@@ -2,21 +2,19 @@
 from __future__ import print_function
 
 import hmac, hashlib, time, requests, base64, threading, Queue
-import ujson as json
+#import ujson as json
 
 from requests.auth import AuthBase
-from pyalgotrade import Symbol
-from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
-import pyalgotrade.logger
 
-logger = pyalgotrade.logger.getLogger("kraken")
+from .. import broker
+from .. import logger as pyalgo_logger
+from ..broker import FloatTraits
+from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 
-BTCUSD, BTCEUR = Symbol.BTCUSD, Symbol.BTCEUR
+from . import VENUE, LOCAL_SYMBOL, SYMBOL_LOCAL
 
-LOCAL_SYMBOL = { BTCUSD: 'XXBTZUSD', BTCEUR: 'XXBTZEUR' }
-SYMBOL_LOCAL = { v: k for k, v in LOCAL_SYMBOL.items() }
-SYMBOLS = list(LOCAL_SYMBOL.keys())
-VENUE = 'kraken'
+logger = pyalgo_logger.getLogger("kraken")
+
 
 
 def flmath(n):
@@ -26,40 +24,18 @@ def fees(txnsize):
     return flmath(txnsize * float('0.0025'))
 
 
+
 # ---------------------------------------------------------------------------
-#  Kraken market data message helper / decoder
+# Turn a kraken order into a pyalgotrade Order
 # ---------------------------------------------------------------------------
 
+from attrdict import AttrDict
 
-def toBookMessages(coinbase_json, symbol):
-    """convert a kraken json message into a list of book messages"""
-    cbase = coinbase_json
-    if type(cbase) != dict:
-        cbase = json.loads(cbase)
-    cbt = cbase['type']
-    if cbt == 'received':
-        return []
-    if cbt == 'done' and cbase['order_type'] == 'market':
-        return []
-    side = { 'buy': Bid, 'sell': Ask }.get(cbase['side'], None)
-    if side is None: raise ValueError("Unknown side %r" % cbase['side'])
-    if not 'price' in cbase: return [] #change of a market order
-    price = cbase['price']
-    if cbt == 'done':
-        mtype, size = Decrease, cbase['remaining_size']
-    elif cbt == 'open':
-        mtype, size = Increase, cbase['remaining_size']
-    elif cbt == 'match':
-        mtype, size = Decrease, cbase['size']
-    elif cbt == 'change':
-        if price == 'null': return []
-        mtype = Decrease
-        size = flmath(float(cbase['old_size']) - float(cbase['new_size']))
-    else:
-        raise ValueError("Unknown coinbase message: %r" % cbase)
-    #rts = datetime.strptime(cbase['time'], "%Y-%m-%dT%H:%M:%S.%fZ")
-    rts = int(cbase['sequence'])
-    return [mtype(rts, VENUE, symbol, float(price), float(size), side)]
+KrakenOrder = AttrDict
+
+#KrakenOrder = namedtuple('KrakenOrder', 'pair side type price price2 volume leverage oflags starttm expiretm userref close_type close_price close_price2')
+#KrakenOrder.__new__.__defaults__ = (None,) * len(KrakenOrder._fields)
+
 
 
 # ---------------------------------------------------------------------------
@@ -116,13 +92,6 @@ class KrakenAuth(AuthBase):
 
 URL = "https://api.kraken.com/0/"
 
-from attrdict import AttrDict
-
-KrakenOrder = AttrDict
-
-#KrakenOrder = namedtuple('KrakenOrder', 'pair side type price price2 volume leverage oflags starttm expiretm userref close_type close_price close_price2')
-#KrakenOrder.__new__.__defaults__ = (None,) * len(KrakenOrder._fields)
-
 class KrakenRest(object):
 
     #GTC = GOOD_TIL_CANCEL = object()
@@ -173,7 +142,7 @@ class KrakenRest(object):
         return self._getj('Assets')
 
     def asset_pairs(self):
-        return self._getj('AssetPairs')
+        return self._getj('AssetPairs')['result']
 
     def ticker(self):
         return self._getj('Ticker')
@@ -226,7 +195,6 @@ class KrakenRest(object):
         return self._auth_postj('ClosedOrders', data=params)
 
     def query_orders(self, *txids, **kwargs):
-    #def query_orders(self, *txids, trades=False, userref=None):
         params = { 'txid': ','.join(str(i) for i in txids) }
         params['trades'] = bool(kwargs.get('trades'))
         if kwargs.get('userref') is not None:
@@ -277,9 +245,6 @@ class KrakenRest(object):
         return self._auth_postj('TradeVolume', data=params)
 
 
-
-
-
     def place_order(self, pair, side, otype, size, price=None, price2=None, leverage=None, oflags=None, starttm=0, expiretm=0, userref=None, validate=False, closeorder=None):
         params = {
             'pair': pair,
@@ -304,30 +269,26 @@ class KrakenRest(object):
         return self._auth_postj('CancelOrder', data=params)
 
 
-#   def Order(self, id):
-#       return KrakenOrder(**(self.order(id)))
-
-
 # impedence match to the rest of the system
 
     def balances(self):
-        return self.accounts()['result']
+        return { SYMBOL_LOCAL[k] : v for k, v in self.accounts()['result'].items() }
 
-    def limitorder(self, side, price, size, symbol=BTCUSD, flags=()):
+    def limitorder(self, side, price, size, symbol, flags=()):
         # newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
         result = self.place_order(LOCAL_SYMBOL[symbol], side, 'limit', size, price=price)
         if result['error']:
             raise Exception(str(result['error']))
         return result['result']['txid'][0]
 
-    def marketorder(self, side, size, symbol=BTCUSD):
+    def marketorder(self, side, size, symbol):
         #newOrderId = self.__httpClient.marketorder(side, size)
         result = self.place_order(LOCAL_SYMBOL[symbol], side, 'market', size)
         if result['error']:
             raise Exception(str(result['error']))
         return result['result']['txid'][0]
 
-    def book_snapshot(self, symbol=BTCUSD):
+    def book_snapshot(self, symbol):
         ksymbol = LOCAL_SYMBOL[symbol]
         book = self.book(ksymbol)['result']
 
@@ -339,7 +300,7 @@ class KrakenRest(object):
             [ mkassign(rts, float(price), float(size), Ask) for price, size, rts in book[ksymbol]['asks'] ]
         )
 
-    def inside_bid_ask(self, symbol=BTCUSD):
+    def inside_bid_ask(self, symbol):
         ksymbol = LOCAL_SYMBOL[symbol]
         book = self.book(ksymbol, 1)['result'][ksymbol]
         bid = book['bids'][0][0]
@@ -347,8 +308,53 @@ class KrakenRest(object):
         #log.info("Got inside bid: {} ask: {}".format(bid, ask))
         return bid, ask
 
+    @lazy_init # cache this, as it doesn't change in the timeframes we care about
+    def instrumentTraits(self):
+        return { SYMBOL_LOCAL[p]: FloatTraits(p['lot_decimals'], p['pair_decimals']) for p in self.asset_pairs() }
+
     def OpenOrders(self, **ooargs):
-        return [KrakenOrder(txid, **oinfo) for txid, oinfo in self.open_orders(**ooargs).items()]
+        return [self._order_to_Order(oinfo, txid) for txid, oinfo in self.open_orders(**ooargs).items()]
+
+    def _order_to_Order(self, korder, txid):
+        action = { 'buy': broker.Order.Action.BUY,
+                  'sell': broker.Order.Action.SELL
+                 }.get(korder.descr.type)
+        if action is None:
+            raise Exception("Invalid order side")
+        size = float(korder.vol)
+        symbol =  SYMBOL_LOCAL[korder.descr.pair]
+        instrumentTraits = self.instrumentTraits()[symbol]
+
+        if korder.descr.ordertype == 'limit': # limit order
+            price = float(korder.descr.price)
+            o = broker.LimitOrder(action, symbol, price, size, instrumentTraits)
+        elif korder.descr.ordertype == 'market':  # Market order
+            onClose = False # TBD
+            o = broker.MarketOrder(action, symbol, size, onClose, instrumentTraits)
+        else:
+            raise ValueError("Unsuported Ordertype: " + korder.descr.ordertype)
+
+        if korder.get('opentm'):
+            o.setSubmitted(korder.refid, korder.created_at)
+
+        if korder.status == 'pending':
+            pass
+        elif korder.status == 'open':
+            if korder.vol_exc > 0:
+                o.setState(broker.Order.State.PARTIALLY_FILLED)
+            else:
+                o.setState(broker.Order.State.ACCEPTED)
+        elif korder.status == 'closed':
+            o.setState(broker.Order.State.FILLED)
+        elif korder.status == 'canceled':
+            o.setState(broker.Order.State.CANCELED)
+        elif korder.status == 'expired':
+            o.setState(broker.Order.State.CANCELED)
+
+        return o
+
+
+
 
 
 
@@ -357,15 +363,16 @@ class BookPoller(threading.Thread):
 
     ON_ORDER_BOOK_UPDATE = object()
 
-    def __init__(self, httpClient, poll_frequency=1):
+    def __init__(self, httpClient, symbol, poll_frequency=1):
         super(BookPoller, self).__init__()
         self.__httpClient = httpClient
+        self.symbol = symbol
         self.poll_frequency = poll_frequency
         self.__queue = Queue.Queue()
         self.__running = True
 
     def _poll(self):
-        return [(self.ON_ORDER_BOOK_UPDATE, self.__httpClient.book_snapshot())]
+        return [(self.ON_ORDER_BOOK_UPDATE, self.__httpClient.book_snapshot(self.symbol))]
 
     def getQueue(self):
         return self.__queue

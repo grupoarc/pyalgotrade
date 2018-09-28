@@ -21,14 +21,12 @@
 import Queue
 from datetime import datetime
 
-import pyalgotrade.logger
-from pyalgotrade import broker, Symbol
-from pyalgotrade.orderbook import Bid, Ask
-
-from . import cc1cc2
+from .. import broker #, Symbol
+from .. import logger as pyalgo_logger
+from ..orderbook import Bid, Ask
 from .netclients import BinanceRest as httpclient
 
-logger = pyalgotrade.logger.getLogger("binance")
+logger = pyalgo_logger.getLogger("binance")
 
 
 def build_order_from_open_order(openOrder, instrumentTraits):
@@ -100,7 +98,6 @@ class LiveBroker(broker.Broker):
         self.__activeOrders = {}
         self.__userTradeQueue = Queue.Queue()
         self.__symbol = feed.getDefaultInstrument()
-        self.__cc1cc2 = cc1cc2(self.__symbol)
 
         feed.getMatchEvent().subscribe(self.onMatchEvent)
         feed.getChangeEvent().subscribe(self.onChangeEvent)
@@ -128,7 +125,7 @@ class LiveBroker(broker.Broker):
         self.__stop = True  # Stop running in case of errors.
         balance = self.__httpClient.balances()
 
-        cc1, cc2 = self.__cc1cc2
+        cc1, cc2 = self.__symbol.cc1cc2()
 
         # Cash aka cc2
         usd = float(balance.get(cc2,0))

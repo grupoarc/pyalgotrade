@@ -10,7 +10,7 @@ from requests.auth import AuthBase
 
 from ..broker import FloatTraits
 from ..orderbook import Ask, Bid, Assign, MarketSnapshot
-from . import VENUE, DEFAULT_SYMBOL, LOCAL_SYMBOL
+from . import VENUE, DEFAULT_SYMBOL, LOCAL_SYMBOL, SYMBOL_LOCAL
 
 
 def flmath(n):
@@ -246,5 +246,5 @@ class BinanceRest(object):
         )
 
     def instrumentTraits(self):
-        return { s['symbol']: FloatTraits(s['baseAssetPrecision'], s['quotePrecision']) for s in self.exchange_info()['symbols'] }
+        return { SYMBOL_LOCAL[s['symbol']]: FloatTraits(s['baseAssetPrecision'], s['quotePrecision']) for s in self.exchange_info()['symbols'] }
 

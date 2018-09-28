@@ -18,7 +18,7 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
-import time
+#import time
 import Queue
 import datetime
 
@@ -36,17 +36,17 @@ class LiveBookFeed(barfeed.BaseBarFeed):
 
     QUEUE_TIMEOUT = 0.01
 
-    def __init__(self, key, secret, maxLen=None):
+    def __init__(self, key, secret, symbol, maxLen=None):
         super(LiveBookFeed, self).__init__(bar.Frequency.SECOND, maxLen)
         self.__httpClient = KrakenRest(key, secret)
-        self.__poller = BookPoller(self.__httpClient, 1)
+        self.__poller = BookPoller(self.__httpClient, symbol, 1)
+        self.registerInstrument(symbol)
         self.__orderBookUpdateEvent = observer.Event()
         self.__matchEvent = observer.Event()
         self.__changeEvent = observer.Event()
         self.EVENT_HANDLER = {
                               BookPoller.ON_ORDER_BOOK_UPDATE: self.__orderBookUpdateEvent.emit,
                               }
-
 
     def http_client(self):
         return self.__httpClient

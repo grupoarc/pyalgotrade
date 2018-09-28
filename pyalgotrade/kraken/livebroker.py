@@ -21,49 +21,13 @@
 import Queue
 from datetime import datetime
 
-import pyalgotrade.logger
-from pyalgotrade import broker
+from .. import broker#, Symbol
+from .. import logger as pyalgo_logger
+from ..orderbook import Bid, Ask
 from .netclients import KrakenRest as httpclient
-from pyalgotrade.orderbook import Bid, Ask
 
 btc_symbol = 'XBT'
-logger = pyalgotrade.logger.getLogger("kraken")
-
-class BTCTraits(broker.InstrumentTraits):
-    def roundQuantity(self, quantity):
-        return round(quantity, 8)
-
-DEFAULT_TRAITS = BTCTraits()
-
-def build_order_from_open_order(openOrder, instrumentTraits=DEFAULT_TRAITS):
-    if openOrder.side == 'buy':
-        action = broker.Order.Action.BUY
-    elif openOrder.side == 'sell':
-        action = broker.Order.Action.SELL
-    else:
-        raise Exception("Invalid order type")
-    if 'size' in openOrder:
-        size = float(openOrder.size)
-    else:
-        size = float(openOrder.filled_size)
-    if 'price' in openOrder: # limit order
-        price = float(openOrder.price)
-        ret = broker.LimitOrder(action, btc_symbol, price, size, instrumentTraits)
-    else:  # Market order
-        onClose = False # TBD
-        ret = broker.MarketOrder(action, btc_symbol, size, onClose, instrumentTraits)
-    ret.setSubmitted(openOrder.id, openOrder.created_at)
-    if 'done_at' not in openOrder:
-        if 'filled_size' in openOrder:
-            ret.setState(broker.Order.State.PARTIALLY_FILLED)
-        else:
-            ret.setState(broker.Order.State.ACCEPTED)
-    elif 'done_reason' == 'canceled':
-        ret.setState(broker.Order.State.CANCELED)
-    else:
-        ret.setState(broker.Order.State.FILLED)
-
-    return ret
+logger = pyalgo_logger.getLogger("kraken")
 
 
 class LiveBroker(broker.Broker):
@@ -102,6 +66,7 @@ class LiveBroker(broker.Broker):
         self.__activeOrders = {}
         self.__userTradeQueue = Queue.Queue()
 
+        self.__symbol = feed.getDefaultInstrument()
         feed.getMatchEvent().subscribe(self.onMatchEvent)
         feed.getChangeEvent().subscribe(self.onChangeEvent)
 
@@ -127,19 +92,21 @@ class LiveBroker(broker.Broker):
         self.__stop = True  # Stop running in case of errors.
         balance = self.__httpClient.balances()
 
-        # Cash
-        usd = float(balance.get('USD',0))
+        cc1, cc2 = self.__symbol.cc1cc2()
+
+        # Cash aka cc2
+        usd = float(balance.get(cc2,0))
         self.__cash = round(usd, 2)
 
-        # BTC
-        btc = float(balance.get('BTC',0))
-        self.__shares = {btc_symbol: btc}
+        # Asset aka cc1
+        asset = float(balance.get(cc1,0))
+        self.__shares = {self.__symbol: asset}
 
-        data = {'usd': self.__cash,
-                'btc': btc
+        data = {
+                'cc1': cc1, 'cc1_': asset,
+                'cc2': cc2, 'cc2_': self.__cash,
                }
-
-        logger.info("Account Balance: {usd} USD, {btc} BTC".format(**data))
+        logger.info("Account Balance: {cc2_} {cc2}, {cc1_} {cc1}".format(**data))
         self.__stop = False  # No errors. Keep running.
 
     def refreshOpenOrders(self):
@@ -147,7 +114,7 @@ class LiveBroker(broker.Broker):
         logger.info("Retrieving open orders.")
         openOrders = self.__httpClient.OpenOrders()
         for openOrder in openOrders:
-            self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(btc_symbol)))
+            self._registerOrder(openOrder)
 
         logger.info("%d open order/s found" % (len(openOrders)))
         self.__stop = False  # No errors. Keep running.
@@ -278,7 +245,7 @@ class LiveBroker(broker.Broker):
         return self.__cash
 
     def getInstrumentTraits(self, instrument):
-        return BTCTraits()
+        return self.__httpClient.instrumentTraits()[instrument]
 
     def getShares(self, instrument):
         return self.__shares.get(instrument, 0)
