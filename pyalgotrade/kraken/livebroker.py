@@ -25,8 +25,8 @@ from .. import broker#, Symbol
 from .. import logger as pyalgo_logger
 from ..orderbook import Bid, Ask
 from .netclients import KrakenRest as httpclient
+from . import VENUE
 
-btc_symbol = 'XBT'
 logger = pyalgo_logger.getLogger("kraken")
 
 
@@ -262,7 +262,7 @@ class LiveBroker(broker.Broker):
         """
 
         if order.isInitial():
-            # Override user settings based on Bitstamp limitations.
+            # Override user settings based on venue limitations.
             order.setAllOrNone(False)
             order.setGoodTillCanceled(True)
 
@@ -271,11 +271,11 @@ class LiveBroker(broker.Broker):
             if order.getType() == order.Type.LIMIT:
                 price = order.getLimitPrice()
                 flags = (httpclient.POST_ONLY, )
-                newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
+                newOrderId = self.__httpClient.limitorder(side, price, size, self.__symbol, flags=flags)
             elif order.getType() == order.Type.MARKET:
-                newOrderId = self.__httpClient.marketorder(side, size)
+                newOrderId = self.__httpClient.marketorder(side, size, self.__symbol)
             else:
-                raise Exception("Coinbase only does LIMIT and MARKET orders")
+                raise Exception(VENUE + " only does LIMIT and MARKET orders")
 
             order.setSubmitted(newOrderId, datetime.now())
             self._registerOrder(order)
@@ -288,9 +288,6 @@ class LiveBroker(broker.Broker):
             raise Exception("The order was already processed")
 
     def _createOrder(self, orderType, action, instrument, quantity, price):
-
-        if instrument != btc_symbol:
-            raise Exception("Only BTC instrument is supported")
 
         action = {
             broker.Order.Action.BUY_TO_COVER: broker.Order.Action.BUY,

@@ -1,6 +1,7 @@
 
 from __future__ import print_function
 
+from datetime import datetime
 import hmac, hashlib, time, requests, base64, threading, Queue
 #import ujson as json
 
@@ -8,7 +9,7 @@ from requests.auth import AuthBase
 
 from .. import broker
 from .. import logger as pyalgo_logger
-from ..broker import FloatTraits
+from ..broker import FloatTraits, OrderExecutionInfo
 from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 
 from . import VENUE, LOCAL_SYMBOL, SYMBOL_LOCAL
@@ -42,21 +43,7 @@ KrakenOrder = AttrDict
 #  Utilities
 # ---------------------------------------------------------------------------
 
-
-class lazy_init(object):
-    """
-    A decorator for single, lazy, initialization of (usually) a property
-    Could also be viewed as caching the first return value
-    """
-    def __init__(self, f):
-        self.val = None
-        self.f = f
-
-    def __call__(self, *args, **kwargs):
-        if self.val is None:
-            self.val = self.f(*args, **kwargs)
-        return self.val
-
+from ..utils import memoize as lazy_init
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +232,7 @@ class KrakenRest(object):
         return self._auth_postj('TradeVolume', data=params)
 
 
-    def place_order(self, pair, side, otype, size, price=None, price2=None, leverage=None, oflags=None, starttm=0, expiretm=0, userref=None, validate=False, closeorder=None):
+    def place_order(self, pair, side, otype, size, oflags=None, **kwargs):
         params = {
             'pair': pair,
             'type': { Bid: "buy", Ask: "sell" }[side],
@@ -253,15 +240,10 @@ class KrakenRest(object):
             'volume': size
         }
         LOCAL_FLAGS = { self.POST_ONLY: 'post' }
-        if price is not None: params['price'] = price
-        if price2 is not None: params['price2'] = price2
-        if leverage is not None: params['leverage'] = leverage
+        for k in ('price', 'price2', 'leverage', 'starttm', 'expiretm', 'userref', 'close', 'validate'):
+            if k in kwargs: params[k] = kwargs[k]
         if oflags is not None: params['oflags'] = ','.join(LOCAL_FLAGS[f] for f in oflags)
-        if starttm is not None: params['starttm'] = starttm
-        if expiretm is not None: params['expiretm'] = expiretm
-        if userref is not None: params['userref'] = userref
-        if closeorder is not None: params['close'] = closeorder
-        if validate: params['validate'] = 'true'
+        logger.debug("AddOrder {!r}".format(params))
         return self._auth_postj('AddOrder', data=params)
 
     def cancel(self, txid):
@@ -276,7 +258,7 @@ class KrakenRest(object):
 
     def limitorder(self, side, price, size, symbol, flags=()):
         # newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
-        result = self.place_order(LOCAL_SYMBOL[symbol], side, 'limit', size, price=price)
+        result = self.place_order(LOCAL_SYMBOL[symbol], side, 'limit', size, price=price, oflags=flags, validate="true")
         if result['error']:
             raise Exception(str(result['error']))
         return result['result']['txid'][0]
@@ -310,10 +292,10 @@ class KrakenRest(object):
 
     @lazy_init # cache this, as it doesn't change in the timeframes we care about
     def instrumentTraits(self):
-        return { SYMBOL_LOCAL[p]: FloatTraits(p['lot_decimals'], p['pair_decimals']) for p in self.asset_pairs() }
+        return { SYMBOL_LOCAL[p]: FloatTraits(d['lot_decimals'], d['pair_decimals']) for p, d in self.asset_pairs().items() }
 
-    def OpenOrders(self, **ooargs):
-        return [self._order_to_Order(oinfo, txid) for txid, oinfo in self.open_orders(**ooargs).items()]
+    def OpenOrders(self):
+        return [self._order_to_Order(oinfo, txid) for txid, oinfo in self.open_orders(trades=True).items()]
 
     def _order_to_Order(self, korder, txid):
         action = { 'buy': broker.Order.Action.BUY,
@@ -351,28 +333,26 @@ class KrakenRest(object):
         elif korder.status == 'expired':
             o.setState(broker.Order.State.CANCELED)
 
+        tradetime2dt = lambda t: datetime.fromtimestamp(t/1000)
+
+        for ttid, tinfo in korder.trades.items():
+            o.addExectionInfo(OrderExecutionInfo(tinfo.price, tinfo.vol, tinfo.fee, tradetime2dt(tinfo.time)))
+
         return o
 
 
 
+class FuncPoller(threading.Thread):
 
 
-
-
-class BookPoller(threading.Thread):
-
-    ON_ORDER_BOOK_UPDATE = object()
-
-    def __init__(self, httpClient, symbol, poll_frequency=1):
-        super(BookPoller, self).__init__()
-        self.__httpClient = httpClient
-        self.symbol = symbol
+    def __init__(self, pollfunc, poll_frequency=1):
+        super(FuncPoller, self).__init__()
         self.poll_frequency = poll_frequency
         self.__queue = Queue.Queue()
         self.__running = True
 
-    def _poll(self):
-        return [(self.ON_ORDER_BOOK_UPDATE, self.__httpClient.book_snapshot(self.symbol))]
+    def __poll(self):
+       raise NotImplementedError
 
     def getQueue(self):
         return self.__queue
@@ -401,9 +381,25 @@ class BookPoller(threading.Thread):
         return self.__running == False
 
     def is_alive(self):
-        return self.__running and super(BookPoller, self).is_alive()
+        return self.__running and super(FuncPoller, self).is_alive()
 
     def join(self):
         if self.is_alive():
-            super(BookPoller, self).join()
+            super(FuncPoller, self).join()
+
+
+
+class BookPoller(FuncPoller):
+    """Poller for book updates"""
+
+    ON_ORDER_BOOK_UPDATE = object()
+
+    def __init__(self, httpClient, symbol, poll_frequency):
+        self._poll = lambda s: [(self.ON_ORDER_BOOK_UPDATE, httpClient.book_snapshot(symbol))]
+
+
+class OrderStatusPoller(FuncPoller):
+    """Poller for our order status"""
+
+
 

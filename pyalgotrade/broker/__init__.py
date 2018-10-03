@@ -19,9 +19,9 @@
 """
 
 import abc
+from enum import Enum
 
-from pyalgotrade import observer
-from pyalgotrade import dispatchprio
+from .. import observer, dispatchprio
 
 
 # This class is used to prevent bugs like the one triggered in testcases.bitstamp_test:TestCase.testRoundingBug.
@@ -110,13 +110,13 @@ class Order(object):
          * Order.Action.SELL_SHORT
     """
 
-    class Action(object):
+    class Action(Enum):
         BUY = 1
         BUY_TO_COVER = 2
         SELL = 3
         SELL_SHORT = 4
 
-    class State(object):
+    class State(Enum):
         INITIAL = 1  # Initial state.
         SUBMITTED = 2  # Order has been submitted.
         ACCEPTED = 3  # Order has been acknowledged by the broker.
@@ -141,7 +141,11 @@ class Order(object):
             else:
                 raise Exception("Invalid state")
 
-    class Type(object):
+        def __str__(self):
+            return self.toString(self)
+
+
+    class Type(Enum):
         MARKET = 1
         LIMIT = 2
         STOP = 3

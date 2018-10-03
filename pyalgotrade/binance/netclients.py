@@ -3,6 +3,7 @@ from __future__ import print_function
 
 import hmac, hashlib, time
 from urllib3.util import parse_url
+from datetime import datetime
 
 import requests
 import ujson as json
@@ -225,13 +226,56 @@ class BinanceRest(object):
         return { j['asset']: float(j['free']) for j in self.account().get('balances',[]) }
 
     def tradeable(self):
-        results = []
-        for s in self.exchange_info()['symbols']:
-            results.append(s['baseAsset'] + s['quoteAsset'])
-        return results
+        return ( s['baseAsset'] + s['quoteAsset'] for s in self.exchange_info()['symbols'] )
 
-    def open_Orders(self, *a, **kw):
-        return  [ BinanceOrder(**o) for o in self.open_orders(*a, **kw) ]
+    def OpenOrders(self, symbol=None):
+        return [self._order_to_Order(oinfo) for oinfo in self.open_orders(symbol)]
+
+    def _order_to_Order(self, oinfo):
+        action = { 'BUY': broker.Order.Action.BUY,
+                  'SELL': broker.Order.Action.SELL
+                 }.get(oinfo['side'])
+        if action is None:
+            raise Exception("Invalid order side")
+        size = float(oinfo['executedQty'])
+        symbol =  SYMBOL_LOCAL[oinfo['symbol']]
+        instrumentTraits = self.instrumentTraits()[symbol]
+
+        if oinfo['type'] == 'LIMIT': # limit order
+            price = float(oinfo['price'])
+            o = broker.LimitOrder(action, symbol, price, size, instrumentTraits)
+        elif oinfo['type']  == 'MARKET':  # Market order
+            onClose = False # TBD
+            o = broker.MarketOrder(action, symbol, size, onClose, instrumentTraits)
+        else:
+            raise ValueError("Unsuported Ordertype: " + oinfo['type'])
+
+        submit_time = datetime.fromtimestamp(float(oinfo['time']/1000))
+        o.setSubmitted(oinfo['orderId'], submit_time)
+
+        # status is one of:
+        #NEW
+        #PARTIALLY_FILLED
+        #FILLED
+        #CANCELED
+        #PENDING_CANCEL (currently unused)
+        #REJECTED
+        #EXPIRED
+        if oinfo['status'] == 'NEW':
+            o.setState(broker.Order.State.ACCEPTED)
+        elif oinfo['status'] == 'PARTIALLY_FILLED':
+            o.setState(broker.Order.State.PARTIALLY_FILLED)
+        elif oinfo['status'] == 'FILLED':
+            o.setState(broker.Order.State.FILLED)
+        elif oinfo['status'] in ('CANCELED', 'EXPIRED', 'REJECTED'):
+            o.setState(broker.Order.State.CANCELED)
+        else:
+            raise ValueError("Unsuported Order status: " + oinfo['status'])
+
+        return o
+
+
+
 
     def book_snapshot(self, symbol=DEFAULT_SYMBOL):
         book = self.book(symbol)
