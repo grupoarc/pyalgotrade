@@ -68,6 +68,9 @@ class Event(object):
             if not self.__emitting:
                 self.__applyChanges()
 
+    def hasSubscribers(self):
+        return bool(self.__handlers)
+
 
 @six.add_metaclass(abc.ABCMeta)
 class Subject(object):

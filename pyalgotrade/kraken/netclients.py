@@ -12,7 +12,7 @@ from .. import logger as pyalgo_logger
 from ..broker import FloatTraits, OrderExecutionInfo
 from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 
-from . import VENUE, LOCAL_SYMBOL, SYMBOL_LOCAL
+from . import VENUE, LOCAL_SYMBOL, SYMBOL_LOCAL, SYMBOLS
 
 logger = pyalgo_logger.getLogger("kraken")
 
@@ -104,6 +104,8 @@ class KrakenRest(object):
         if raise_errors:
             try:
                 result.raise_for_status() # raise if not status == 200
+                if result.json().get('error'):
+                    raise ValueError()
             except Exception:
                 print("ERROR: " + method + " " + url + " " + repr(kwargs) + " GOT: " + result.text)
                 raise
@@ -168,7 +170,9 @@ class KrakenRest(object):
     def open_orders(self, trades=False, userref=None):
         params = { 'trades': 'true' if trades else 'false' }
         if userref is not None: params['userref'] = userref
-        return self._auth_postj('OpenOrders', data=params)['result']['open']
+        #return self._auth_postj('OpenOrders', data=params)['result']['open']
+        res = self._auth_postj('OpenOrders', data=params)
+        return res['result']['open']
 
     def closed_orders(self, offset, trades=False, userref=None, start=None, end=None, closetime=None):
         """
@@ -345,13 +349,13 @@ class KrakenRest(object):
 class FuncPoller(threading.Thread):
 
 
-    def __init__(self, pollfunc, poll_frequency=1):
+    def __init__(self, poll_frequency=1):
         super(FuncPoller, self).__init__()
         self.poll_frequency = poll_frequency
         self.__queue = Queue.Queue()
         self.__running = True
 
-    def __poll(self):
+    def _poll(self):
        raise NotImplementedError
 
     def getQueue(self):
@@ -363,7 +367,7 @@ class FuncPoller(threading.Thread):
     def run(self):
         while self.__running:
             try:
-                events = self._poll()
+                events = list(self._poll())
                 if events:
                     logger.info("%d new event(s) found" % (len(events)))
                 for e in events:
@@ -401,5 +405,57 @@ class BookPoller(FuncPoller):
 class OrderStatusPoller(FuncPoller):
     """Poller for our order status"""
 
+    ON_ORDER_UPDATE = object()
+
+    def __init__(self, httpClient, symbol, poll_frequency):
+        self.__client = httpClient
+
+    def __poll(self):
+        return [ (self.ORDER_UPDATE, o) for o in self.__client.OpenOrders() ]
+
+
+class MultiPoller(FuncPoller):
+    """Poller for our multiple things - warning, polls any one thing at 1/(poll_frequency*len(to_poll))"""
+
+    ON_ORDER_BOOK_UPDATE = object()
+    ON_ORDER_UPDATE = object()
+
+    ACTION = { }
+
+    def __init__(self, httpClient, symbol, poll_frequency, to_poll=()):
+        super(MultiPoller, self).__init__(poll_frequency)
+
+        if not symbol in LOCAL_SYMBOL:
+            validsyms = ' '.join([str(s) for s in SYMBOLS if len(str(s))>4])
+            raise ValueError("Unsupported symbol: {} . Try one of: {}".format(symbol, validsyms))
+        self.ACTION = {self.ON_ORDER_BOOK_UPDATE : self.__poll_orderbook,
+                       self.ON_ORDER_UPDATE : self.__poll_orders
+                       }
+        self.__actions = to_poll
+        self.__symbol = symbol
+        self.__httpClient = httpClient
+        self.__action_idx = 0
+
+    def _poll(self):
+        if not self.__actions:
+            self.__actions = self.ACTION.keys()
+        i = self.__action_idx
+        self.__action_idx = (i + 1) % len(self.__actions)
+        return self.ACTION[self.__actions[i]]()
+
+    def __poll_orderbook(self):
+        logger.info("polling orderbook")
+        return [(self.ON_ORDER_BOOK_UPDATE, self.__httpClient.book_snapshot(self.__symbol))]
+
+    def __poll_orders(self):
+        logger.info("polling open orders")
+        return [ (self.ON_ORDER_UPDATE, o) for o in self.__httpClient.OpenOrders() ]
+
+    def feeds(self):
+        return self.__actions
+
+    def add_feed(self, action):
+        if not action in self.__actions:
+            self.__action.append(action)
 
 

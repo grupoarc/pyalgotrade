@@ -133,7 +133,7 @@ class LiveBroker(broker.Broker):
 
         # Asset aka cc1
         asset = float(balance.get(cc1,0))
-        self.__shares = {cc1+cc2: asset}
+        self.__shares = {self.__symbol: asset}
 
         data = {
                 'cc1': cc1, 'cc1_': asset,
