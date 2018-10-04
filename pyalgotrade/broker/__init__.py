@@ -1,6 +1,6 @@
 # PyAlgoTrade
 #
-# Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
+# Copyright 2011-2018 Gabriel Martin Becedillas Ruiz
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@
 import abc
 from enum import Enum
 
+import six
+
 from .. import observer, dispatchprio
 
 
@@ -28,9 +30,8 @@ from .. import observer, dispatchprio
 # Why not use decimal.Decimal instead ?
 # 1: I'd have to expose this to users. They'd have to deal with decimal.Decimal and it'll break existing users.
 # 2: numpy arrays built using decimal.Decimal instances have dtype=object.
+@six.add_metaclass(abc.ABCMeta)
 class InstrumentTraits(object):
-
-    __metaclass__ = abc.ABCMeta
 
     # Return the floating point value number rounded.
     @abc.abstractmethod
@@ -190,12 +191,6 @@ class Order(object):
 #        if other is None:
 #            return True
 #        assert(False)
-
-    def __repr__(self):
-        r = "<Order "
-        r += ' '.join([ k+': '+repr(v) for k, v in self.__dict__.items() ])
-        r += '>'
-        return r
 
     def _setQuantity(self, quantity):
         assert self.__quantity is None, "Can only change the quantity if it was undefined"
@@ -518,6 +513,7 @@ class OrderEvent(object):
 
 ######################################################################
 # Base broker class
+@six.add_metaclass(abc.ABCMeta)
 class Broker(observer.Subject):
     """Base class for brokers.
 
@@ -525,8 +521,6 @@ class Broker(observer.Subject):
 
         This is a base class and should not be used directly.
     """
-
-    __metaclass__ = abc.ABCMeta
 
     def __init__(self):
         super(Broker, self).__init__()

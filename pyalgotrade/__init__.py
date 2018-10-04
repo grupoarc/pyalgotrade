@@ -1,6 +1,6 @@
 # PyAlgoTrade
 #
-# Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
+# Copyright 2011-2018 Gabriel Martin Becedillas Ruiz
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@
 .. moduleauthor:: Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 """
 
-__version__ = "0.17"
+name = "PyAlgoTrade"
+__version__ = "0.20"
 
 from enum import Enum
 
@@ -54,4 +55,3 @@ Symbol.__doc__ = """Pyalgotrade standard symbol enum.  Symbols are strings of th
 Symbol.__str__ = lambda self: self.name
 
 Symbol.cc1cc2 =  lambda self: tuple(([Symbol[c] for c in str(self).split('-')] + [None])[:2])
-

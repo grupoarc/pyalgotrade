@@ -2,7 +2,7 @@
 
 # PyAlgoTrade
 #
-# Copyright 2011-2015 Gabriel Martin Becedillas Ruiz
+# Copyright 2011-2018 Gabriel Martin Becedillas Ruiz
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,31 +19,40 @@
 
 from setuptools import setup, find_packages
 
+
 setup(
     name='PyAlgoTrade',
-    version='0.17',
+    version='0.20',
     description='Python Algorithmic Trading',
     long_description='Python library for backtesting stock trading strategies.',
     author='Gabriel Martin Becedillas Ruiz',
     author_email='pyalgotrade@gmail.com',
     url='http://gbeced.github.io/pyalgotrade/',
-    download_url='http://sourceforge.net/projects/pyalgotrade/files/0.17/PyAlgoTrade-0.17.tar.gz/download',
+    download_url='http://sourceforge.net/projects/pyalgotrade/files/0.20/PyAlgoTrade-0.20.tar.gz/download',
+    classifiers=[
+        "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 3",
+        "Operating System :: OS Independent",
+    ],
     packages=find_packages(exclude=['testcases']),
     install_requires=[
+        "matplotlib",
         "enum34",
         "sortedcontainers",
         "attrdict",
         "ujson",
         "numpy",
-        "pytz",
         "python-dateutil",
+        "pytz",
         "requests",
+        "retrying",
+        "scipy",
+        "six",
+        "tornado",
+        "tweepy",
+        "ws4py>=0.3.4",
     ],
     extras_require={
-        'Scipy':  ["scipy"],
-        'TALib':  ["Cython", "TA-Lib"],
-        'Plotting':  ["matplotlib"],
-        'Bitstamp':  ["ws4py>=0.3.4", "tornado"],
-        'Twitter':  ["tweepy"],
+        "TALib":  ["Cython", "TA-Lib"],
     },
 )

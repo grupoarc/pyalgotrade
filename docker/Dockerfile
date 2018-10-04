@@ -1,11 +1,12 @@
-FROM ubuntu:latest
+ARG PYTHON_VERSION
+FROM python:${PYTHON_VERSION}
 MAINTAINER Gabriel Martin Becedillas Ruiz <gabriel.becedillas@gmail.com>
 
-RUN apt-get update
+RUN apt-get update; apt-get upgrade -y 
 
 RUN apt-get install -y build-essential
 RUN apt-get install -y python-setuptools python-dev
-RUN easy_install pip
+RUN apt-get install -y python-pip
 
 RUN apt-get install -y gfortran libopenblas-dev liblapack-dev
 RUN apt-get install -y pkg-config
@@ -22,6 +23,7 @@ RUN pip install ws4py
 RUN pip install tornado
 RUN pip install tweepy
 RUN pip install cython
+RUN pip install retrying
 
 # TA-Lib
 RUN cd /tmp; \
@@ -34,4 +36,4 @@ RUN cd /tmp; \
 	rm -rf ta-lib
 RUN pip install TA-Lib
 
-RUN pip install pyalgotrade==0.17
+RUN pip install pyalgotrade==0.20
