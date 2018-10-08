@@ -57,20 +57,29 @@ class KrakenAuth(AuthBase):
         self.secret_key = secret
 
     def __call__(self, request):
-        nonce = int(1000*time.time())
-        request.data = getattr(request, 'data', {})
-        request.data['nonce'] = nonce
-        request.prepare_body(request.data, []) # build request.body from request.data
-
-        message = request.path_url + hashlib.sha256(str(nonce) + request.body).digest()
+        nonce = request.headers['__nonce__']
+        del request.headers['__nonce__']
+        message = request.path_url + hashlib.sha256(nonce + request.body).digest()
         hmac_key = base64.b64decode(self.secret_key)
         signature = hmac.new(hmac_key, message, hashlib.sha512).digest()
+        signature = base64.b64encode(signature)
 
         request.headers.update({
             'API-Key': self.api_key,
-            'API-Sign': base64.b64encode(signature)
+            'API-Sign': signature
         })
         return request
+
+    @staticmethod
+    def Request(method, url, **kwargs):
+        data = kwargs.get('data', {})
+        if 'nonce' not in data: data['nonce'] = str(int(1000.0*time.time()))
+        kwargs['data'] = data
+        headers = kwargs.get('headers', {})
+        headers['__nonce__'] = data['nonce']
+        kwargs['headers'] = headers
+        return requests.Request(method, url, **kwargs)
+
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +109,9 @@ class KrakenRest(object):
     def _request(self, method, url, **kwargs):
         raise_errors = kwargs.get('raise_errors', True)
         if 'raise_errors' in kwargs: del kwargs['raise_errors']
-        result = self._session.request(method, URL + url, **kwargs)
+        #result = self._session.request(method, URL + url, **kwargs)
+        req = self.__auth.Request(method, URL + url, **kwargs)
+        result = self._session.send(req.prepare())
         if raise_errors:
             try:
                 result.raise_for_status() # raise if not status == 200
@@ -241,11 +252,11 @@ class KrakenRest(object):
             'pair': pair,
             'type': { Bid: "buy", Ask: "sell" }[side],
             'ordertype': otype,
-            'volume': size
+            'volume': str(size)
         }
         LOCAL_FLAGS = { self.POST_ONLY: 'post' }
         for k in ('price', 'price2', 'leverage', 'starttm', 'expiretm', 'userref', 'close', 'validate'):
-            if k in kwargs: params[k] = kwargs[k]
+            if k in kwargs: params[k] = str(kwargs[k])
         if oflags is not None: params['oflags'] = ','.join(LOCAL_FLAGS[f] for f in oflags)
         logger.debug("AddOrder {!r}".format(params))
         return self._auth_postj('AddOrder', data=params)
@@ -262,7 +273,7 @@ class KrakenRest(object):
 
     def limitorder(self, side, price, size, symbol, flags=()):
         # newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
-        result = self.place_order(LOCAL_SYMBOL[symbol], side, 'limit', size, price=price, oflags=flags, validate="true")
+        result = self.place_order(LOCAL_SYMBOL[symbol], side, 'limit', size, price=price, oflags=flags)
         if result['error']:
             raise Exception(str(result['error']))
         return result['result']['txid'][0]
@@ -296,7 +307,9 @@ class KrakenRest(object):
 
     @lazy_init # cache this, as it doesn't change in the timeframes we care about
     def instrumentTraits(self):
-        return { SYMBOL_LOCAL[p]: FloatTraits(d['lot_decimals'], d['pair_decimals']) for p, d in self.asset_pairs().items() }
+        trait = lambda td: FloatTraits(td['lot_decimals'], td['pair_decimals'])
+        return { SYMBOL_LOCAL[p]: trait(d)
+                   for p, d in self.asset_pairs().items() if p in SYMBOL_LOCAL }
 
     def OpenOrders(self):
         return [self._order_to_Order(oinfo, txid) for txid, oinfo in self.open_orders(trades=True).items()]
