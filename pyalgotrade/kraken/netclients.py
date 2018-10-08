@@ -50,16 +50,40 @@ from ..utils import memoize as lazy_init
 #  Kraken authentication helper
 # ---------------------------------------------------------------------------
 
+try:
+    # Python 3
+    from urllib.parse import parse_qs
+except ImportError:
+    # Python 2
+    from urlparse import parse_qs
+
+
+URL_ENCODED = 'application/x-www-form-urlencoded'
+
 class KrakenAuth(AuthBase):
-    """a requests-module-compatible auth module"""
+    """a requests-module-compatible auth module for kraken.com"""
     def __init__(self, key, secret):
         self.api_key    = key
         self.secret_key = secret
 
     def __call__(self, request):
-        nonce = request.headers['__nonce__']
-        del request.headers['__nonce__']
-        message = request.path_url + hashlib.sha256(nonce + request.body).digest()
+        if request.body:
+            assert request.headers.get('Content-Type') == URL_ENCODED
+            data = parse_qs(request.body)
+        else:
+            data = {}
+
+        nonce = int(1000 * time.time())
+
+        # insert the nonce in the encoded body
+        data['nonce'] = nonce
+        request.prepare_body(data, None, None)
+
+        body = request.body
+        if not isinstance(body, bytes):   # Python 3
+            body = body.encode('latin1')  # standard encoding for HTTP
+
+        message = request.path_url + hashlib.sha256(b'%s%s' % (nonce, body)).digest()
         hmac_key = base64.b64decode(self.secret_key)
         signature = hmac.new(hmac_key, message, hashlib.sha512).digest()
         signature = base64.b64encode(signature)
@@ -69,17 +93,6 @@ class KrakenAuth(AuthBase):
             'API-Sign': signature
         })
         return request
-
-    @staticmethod
-    def Request(method, url, **kwargs):
-        data = kwargs.get('data', {})
-        if 'nonce' not in data: data['nonce'] = str(int(1000.0*time.time()))
-        kwargs['data'] = data
-        headers = kwargs.get('headers', {})
-        headers['__nonce__'] = data['nonce']
-        kwargs['headers'] = headers
-        return requests.Request(method, url, **kwargs)
-
 
 
 # ---------------------------------------------------------------------------
@@ -109,9 +122,7 @@ class KrakenRest(object):
     def _request(self, method, url, **kwargs):
         raise_errors = kwargs.get('raise_errors', True)
         if 'raise_errors' in kwargs: del kwargs['raise_errors']
-        #result = self._session.request(method, URL + url, **kwargs)
-        req = self.__auth.Request(method, URL + url, **kwargs)
-        result = self._session.send(req.prepare())
+        result = self._session.request(method, URL + url, **kwargs)
         if raise_errors:
             try:
                 result.raise_for_status() # raise if not status == 200
@@ -312,9 +323,10 @@ class KrakenRest(object):
                    for p, d in self.asset_pairs().items() if p in SYMBOL_LOCAL }
 
     def OpenOrders(self):
-        return [self._order_to_Order(oinfo, txid) for txid, oinfo in self.open_orders(trades=True).items()]
+        return [self._order_to_Order(AttrDict(oinfo), txid) for txid, oinfo in self.open_orders(trades=True).items()]
 
     def _order_to_Order(self, korder, txid):
+        logger.debug("got krakenorder {!r}: {!r}".format(txid, korder))
         action = { 'buy': broker.Order.Action.BUY,
                   'sell': broker.Order.Action.SELL
                  }.get(korder.descr.type)
@@ -334,12 +346,14 @@ class KrakenRest(object):
             raise ValueError("Unsuported Ordertype: " + korder.descr.ordertype)
 
         if korder.get('opentm'):
-            o.setSubmitted(korder.refid, korder.created_at)
+            # Not sure which is more correct here, but refid isn't defined for open limit orders
+            o.setSubmitted(txid, korder.opentm)
+            #o.setSubmitted(korder.refid, korder.opentm)
 
         if korder.status == 'pending':
             pass
         elif korder.status == 'open':
-            if korder.vol_exc > 0:
+            if korder.get('vol_exc', 0) > 0:
                 o.setState(broker.Order.State.PARTIALLY_FILLED)
             else:
                 o.setState(broker.Order.State.ACCEPTED)
@@ -352,7 +366,7 @@ class KrakenRest(object):
 
         tradetime2dt = lambda t: datetime.fromtimestamp(t/1000)
 
-        for ttid, tinfo in korder.trades.items():
+        for ttid, tinfo in korder.get('trades', {}).items():
             o.addExectionInfo(OrderExecutionInfo(tinfo.price, tinfo.vol, tinfo.fee, tradetime2dt(tinfo.time)))
 
         return o

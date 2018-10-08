@@ -85,3 +85,8 @@ LOCAL_SYMBOL = { v: k for k, v in SYMBOL_LOCAL.items() }
 # supported symbols
 SYMBOLS = list(LOCAL_SYMBOL.keys())
 
+# extra aliases
+SYMBOL_LOCAL.update({
+    "XBTUSD": Symbol.BTCUSD
+})
+
