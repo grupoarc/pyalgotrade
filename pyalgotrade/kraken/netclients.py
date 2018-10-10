@@ -14,7 +14,7 @@ from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 
 from . import VENUE, LOCAL_SYMBOL, SYMBOL_LOCAL, SYMBOLS
 
-logger = pyalgo_logger.getLogger("kraken")
+logger = pyalgo_logger.getLogger(__name__)
 
 
 

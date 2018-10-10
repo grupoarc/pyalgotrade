@@ -25,40 +25,9 @@ from .. import broker #, Symbol
 from .. import logger as pyalgo_logger
 from ..orderbook import Bid, Ask
 from .netclients import BinanceRest as httpclient
+from . import VENUE
 
-logger = pyalgo_logger.getLogger("binance")
-
-
-def build_order_from_open_order(openOrder, instrumentTraits):
-    if openOrder.side == 'buy':
-        action = broker.Order.Action.BUY
-    elif openOrder.side == 'sell':
-        action = broker.Order.Action.SELL
-    else:
-        raise Exception("Invalid order type")
-    if 'size' in openOrder:
-        size = float(openOrder.size)
-    else:
-        size = float(openOrder.filled_size)
-    if 'price' in openOrder: # limit order
-        price = float(openOrder.price)
-        ret = broker.LimitOrder(action, openOrder.symbol, price, size, instrumentTraits)
-    else:  # Market order
-        onClose = False # TBD
-        ret = broker.MarketOrder(action, openOrder.symbol, size, onClose, instrumentTraits)
-    ret.setSubmitted(openOrder.id, openOrder.created_at)
-    if 'done_at' not in openOrder:
-        if 'filled_size' in openOrder:
-            ret.setState(broker.Order.State.PARTIALLY_FILLED)
-        else:
-            ret.setState(broker.Order.State.ACCEPTED)
-    elif 'done_reason' == 'canceled':
-        ret.setState(broker.Order.State.CANCELED)
-    else:
-        ret.setState(broker.Order.State.FILLED)
-
-    return ret
-
+logger = pyalgo_logger.getLogger(__name__)
 
 class LiveBroker(broker.Broker):
     """A live broker.
@@ -97,8 +66,8 @@ class LiveBroker(broker.Broker):
         self.__shares = {}
         self.__activeOrders = {}
         self.__userTradeQueue = Queue.Queue()
-        self.__symbol = feed.getDefaultInstrument()
 
+        self.__symbol = feed.getDefaultInstrument()
         feed.getMatchEvent().subscribe(self.onMatchEvent)
         feed.getChangeEvent().subscribe(self.onChangeEvent)
 
@@ -145,10 +114,10 @@ class LiveBroker(broker.Broker):
 
     def refreshOpenOrders(self):
         self.__stop = True  # Stop running in case of errors.
-        logger.info("Retrieving open orders.")
-        openOrders = self.__httpClient.open_Orders(symbol=self.__symbol) # if we don't specify a symbol, we get penalized
+        logger.info("Retrieving open orders for symbol {!s}.".format(self.__symbol))
+        openOrders = self.__httpClient.OpenOrders(symbol=self.__symbol) # if we don't specify a symbol, we get penalized
         for openOrder in openOrders:
-            self._registerOrder(build_order_from_open_order(openOrder, self.getInstrumentTraits(self.__symbol)))
+            self._registerOrder(openOrder)
 
         logger.info("%d open order/s found" % (len(openOrders)))
         self.__stop = False  # No errors. Keep running.
@@ -300,12 +269,12 @@ class LiveBroker(broker.Broker):
             size = order.getQuantity()
             if order.getType() == order.Type.LIMIT:
                 price = order.getLimitPrice()
-                flags = (httpclient.POST_ONLY, httpclient.GTC)
-                newOrderId = self.__httpClient.limitorder(side, price, size, flags=flags)
+                flags = (httpclient.GTC,)
+                newOrderId = self.__httpClient.limitorder(side, price, size, self.__symbol, flags=flags)
             elif order.getType() == order.Type.MARKET:
-                newOrderId = self.__httpClient.marketorder(side, size)
+                newOrderId = self.__httpClient.marketorder(side, size, self.__symbol)
             else:
-                raise Exception("Binance only does LIMIT and MARKET orders")
+                raise Exception(VENUE + " only does LIMIT and MARKET orders")
 
             order.setSubmitted(newOrderId, datetime.now())
             self._registerOrder(order)
@@ -358,7 +327,7 @@ class LiveBroker(broker.Broker):
         if activeOrder.isFilled():
             raise Exception("Can't cancel order that has already been filled")
         # submit the cancel request
-        self.__httpClient.cancel(order.getId())
+        self.__httpClient.cancelOrder(order)
         # state changes will happen when confirmation is received in onChange
 
     # END broker.Broker interface

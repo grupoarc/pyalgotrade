@@ -9,10 +9,12 @@ import requests
 import ujson as json
 from requests.auth import AuthBase
 
-from ..broker import FloatTraits
+from .. import logger as pyalgo_logger
+from ..broker import FloatTraits, Order, LimitOrder, MarketOrder
 from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 from . import VENUE, DEFAULT_SYMBOL, LOCAL_SYMBOL, SYMBOL_LOCAL
 
+logger = pyalgo_logger.getLogger(__name__)
 
 def flmath(n):
     return round(n, 12)
@@ -86,6 +88,15 @@ class BinanceAuth(AuthBase):
         })
         return request
 
+try:
+    # Python 3
+    from urllib.parse import parse_qs
+except ImportError:
+    # Python 2
+    from urlparse import parse_qs
+
+
+URL_ENCODED = 'application/x-www-form-urlencoded'
 
 class BinanceSign(BinanceAuth):
 
@@ -99,20 +110,20 @@ class BinanceSign(BinanceAuth):
 
         # put the required timestamp into the data
         timestamp = str(int(time.time()*1000))
-        if request.method == 'POST':
-            print("Got POST")
-            request.data = getattr(request, 'data', {})
-            request.data['timestamp'] = timestamp
-            request.data['recvWindow'] = self.RECV_WINDOW
-            request.prepare_body(request.data, [])
-            request.data['signature'] = signature(request.body)
-            request.prepare_body(request.data, [])
 
+        if request.body: # POST
+            assert request.headers.get('Content-Type') == URL_ENCODED
+            data = parse_qs(request.body)
+            data['timestamp'] = timestamp
+            data['recvWindow'] = self.RECV_WINDOW
+            request.prepare_body(data, None, None)
+            data['signature'] = signature(request.body)
+            request.prepare_body(data, None, None)
         else:
-            request.params = getattr(request, 'params', {})
-            request.params['timestamp'] = timestamp
-            request.params['recvWindow'] = self.RECV_WINDOW
-            request.prepare_url(request.url, request.params)
+            params = getattr(request, 'params', {})
+            params['timestamp'] = timestamp
+            params['recvWindow'] = self.RECV_WINDOW
+            request.prepare_url(request.url, params)
             scheme, auth, host, port, path, query, fragment = parse_url(request.url)
             request.prepare_url(request.url, { 'signature': signature(query) })
         return request
@@ -208,11 +219,16 @@ class BinanceRest(object):
     def account(self):
         return self._sign_getj('v3/account')
 
-    def order(self, symbol, orderId):
-        return self._sign_getj('v3/order', params={ 'symbol': LOCAL_SYMBOL[symbol], 'orderId' : orderId })
+    def order(self, symbol, side, otype, size, extra={}):
+        data = {'symbol': LOCAL_SYMBOL[symbol],
+                'side': { Bid: "BUY", Ask: "SELL" }[side],
+                'type': otype,
+                'quantity': size }
+        data.update(extra)
+        return self._sign_postj('v3/order', data=data)
 
     def cancel(self, symbol, orderId):
-        return self._sign_delj('v3/order', params={ 'symbol': LOCAL_SYMBOL[symbol], 'orderId' : orderId })
+        return self._sign_delj('v3/order', data={ 'symbol': LOCAL_SYMBOL[symbol], 'orderId' : orderId })
 
     def open_orders(self, symbol=None):
         params = {'symbol': LOCAL_SYMBOL[symbol]} if symbol is not None else {}
@@ -228,25 +244,29 @@ class BinanceRest(object):
     def tradeable(self):
         return ( s['baseAsset'] + s['quoteAsset'] for s in self.exchange_info()['symbols'] )
 
+    def cancelOrder(self, order):
+        return self.cancel(order.getInstrument(), order.getId())
+
     def OpenOrders(self, symbol=None):
         return [self._order_to_Order(oinfo) for oinfo in self.open_orders(symbol)]
 
     def _order_to_Order(self, oinfo):
-        action = { 'BUY': broker.Order.Action.BUY,
-                  'SELL': broker.Order.Action.SELL
+        logger.debug("making Order from {!r}".format(oinfo,))
+        action = { 'BUY': Order.Action.BUY,
+                  'SELL': Order.Action.SELL
                  }.get(oinfo['side'])
         if action is None:
             raise Exception("Invalid order side")
-        size = float(oinfo['executedQty'])
+        size = float(oinfo['origQty'])
         symbol =  SYMBOL_LOCAL[oinfo['symbol']]
         instrumentTraits = self.instrumentTraits()[symbol]
 
         if oinfo['type'] == 'LIMIT': # limit order
             price = float(oinfo['price'])
-            o = broker.LimitOrder(action, symbol, price, size, instrumentTraits)
+            o = LimitOrder(action, symbol, price, size, instrumentTraits)
         elif oinfo['type']  == 'MARKET':  # Market order
             onClose = False # TBD
-            o = broker.MarketOrder(action, symbol, size, onClose, instrumentTraits)
+            o = MarketOrder(action, symbol, size, onClose, instrumentTraits)
         else:
             raise ValueError("Unsuported Ordertype: " + oinfo['type'])
 
@@ -262,20 +282,17 @@ class BinanceRest(object):
         #REJECTED
         #EXPIRED
         if oinfo['status'] == 'NEW':
-            o.setState(broker.Order.State.ACCEPTED)
+            o.setState(Order.State.ACCEPTED)
         elif oinfo['status'] == 'PARTIALLY_FILLED':
-            o.setState(broker.Order.State.PARTIALLY_FILLED)
+            o.setState(Order.State.PARTIALLY_FILLED)
         elif oinfo['status'] == 'FILLED':
-            o.setState(broker.Order.State.FILLED)
+            o.setState(Order.State.FILLED)
         elif oinfo['status'] in ('CANCELED', 'EXPIRED', 'REJECTED'):
-            o.setState(broker.Order.State.CANCELED)
+            o.setState(Order.State.CANCELED)
         else:
             raise ValueError("Unsuported Order status: " + oinfo['status'])
 
         return o
-
-
-
 
     def book_snapshot(self, symbol=DEFAULT_SYMBOL):
         book = self.book(symbol)
@@ -290,5 +307,25 @@ class BinanceRest(object):
         )
 
     def instrumentTraits(self):
-        return { SYMBOL_LOCAL[s['symbol']]: FloatTraits(s['baseAssetPrecision'], s['quotePrecision']) for s in self.exchange_info()['symbols'] }
+        trait = lambda td: FloatTraits(td['baseAssetPrecision'], td['quotePrecision'])
+        r = { SYMBOL_LOCAL[s['symbol']]: trait(s)
+                for s in self.exchange_info()['symbols'] if s['symbol'] in SYMBOL_LOCAL }
+        logger.debug("instrument traits: {!r}".format(r))
+        return r
+
+    def limitorder(self, side, price, size, symbol, flags=()):
+        extra = { 'price' : price }
+        for flag, val in { self.GTC: "GTC", self.IOC: "IOC", self.FOK: "FOK" }.items():
+            if flag in flags:
+                extra['timeInForce'] = val
+        o = self.order(symbol, side, "LIMIT", size, extra=extra)
+        return o['orderId']
+
+    def marketorder(self, side, size, symbol, flags=()):
+        extra = {}
+        for flag, val in { self.GTC: "GTC", self.IOC: "IOC", self.FOK: "FOK" }.items():
+            if flag in flags:
+                extra['timeInForce'] = val
+        o = self.order(symbol, side, "MARKET", size, extra=extra)
+        return o['orderId']
 
