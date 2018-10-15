@@ -28,7 +28,6 @@ from pyalgotrade.coinbase import common
 from pyalgotrade.kraken import livebroker
 from pyalgotrade.orderbook import OrderBook, Bid, Ask
 
-from pyalgotrade.coinbase.wsclient import TradeBar
 
 LiveBroker = livebroker.LiveBroker
 
@@ -92,20 +91,18 @@ class BacktestingBroker(backtesting.Broker):
     def _fakeBarsForOrder(self, order):
         volume = order.getQuantity()
         if order.getAction() in [ broker.Order.Action.BUY, broker.Order.Action.BUY_TO_COVER ]:
-            side, dir_ = Ask, TradeBar.UP
+            side, dir_ = Ask, bar.TradeBar.UP
         else:
-            side, dir_ = Bid, TradeBar.DOWN
+            side, dir_ = Bid, bar.TradeBar.DOWN
         open_ = high = low = close = self.__book.price_for_size(side, volume) / volume
         if not high: return
         adjClose = None
         freq = bar.Frequency.TRADE
         time = datetime.now()
-        fakebar = TradeBar(time, open_, high, low, close, volume, adjClose, freq, dir_)
+        fakebar = bar.TradeBar(time, open_, high, low, close, volume, adjClose, freq, dir_)
         return bar.Bars({'BTC':fakebar})
 
     def _check_order(self, action, instrument, quantity, totalprice):
-        if instrument != common.btc_symbol:
-            raise Exception("Only BTC instrument is supported")
         if totalprice < BacktestingBroker.MIN_TRADE_USD:
             raise Exception("Trade must be >= %s" % (BacktestingBroker.MIN_TRADE_USD))
         if action == broker.Order.Action.BUY:
@@ -113,7 +110,7 @@ class BacktestingBroker(backtesting.Broker):
             if totalprice > self.getCash(False):
                 raise Exception("Not enough cash")
         elif action == broker.Order.Action.SELL:
-            if quantity > self.getShares(common.btc_symbol):
+            if quantity > self.getShares(instrument):
                 raise Exception("Not enough %s" % (common.btc_symbol))
         else:
             raise Exception("Only BUY/SELL orders are supported")
@@ -138,8 +135,6 @@ class BacktestingBroker(backtesting.Broker):
        return super(BacktestingBroker, self).createMarketOrder(action, instrument, quantity, onClose)
 
     def createLimitOrder(self, action, instrument, limitPrice, quantity):
-        if instrument != common.btc_symbol:
-            raise Exception("Only BTC instrument is supported")
 
         action = self._remap_action(action)
 

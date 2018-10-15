@@ -8,13 +8,7 @@ from pyalgotrade import Symbol
 from requests.auth import AuthBase
 from pyalgotrade.orderbook import Increase, Decrease, Ask, Bid, Assign, MarketSnapshot
 
-BTCUSD, BTCEUR = Symbol.BTCUSD, Symbol.BTCEUR
-
-LOCAL_SYMBOL = { BTCUSD: 'BTC-USD', BTCEUR: 'BTC-EUR' }
-SYMBOL_LOCAL = { v: k for k, v in LOCAL_SYMBOL.items() }
-SYMBOLS = list(LOCAL_SYMBOL.keys())
-VENUE = 'coinbase'
-
+from . import LOCAL_SYMBOL, VENUE
 
 def flmath(n):
     return round(n, 12)
@@ -166,7 +160,7 @@ class CoinbaseRest(object):
     def products(self):
         return self._getj('products')
 
-    def stats(self, symbol=BTCUSD):
+    def stats(self, symbol=Symbol.BTC_USD):
         product = LOCAL_SYMBOL[symbol]
         return self._getj("products/" + product + "/stats")
 
@@ -239,7 +233,7 @@ class CoinbaseRest(object):
             }
         return self._auth_postj('orders', json=params)
 
-    def limitorder(self, side, price, size, symbol=BTCUSD, flags=(), cancel_after=None):
+    def limitorder(self, side, price, size, symbol=Symbol.BTC_USD, flags=(), cancel_after=None):
         """Place a limit order"""
         bs = { Bid: "buy", Ask: "sell" }[side]
         params = {
@@ -261,7 +255,7 @@ class CoinbaseRest(object):
 
         return self._auth_postj('orders', json=params)['id']
 
-    def marketorder(self, side, size, symbol=BTCUSD):
+    def marketorder(self, side, size, symbol=Symbol.BTC_USD):
         """Place a market order"""
         bs = { Bid: "buy", Ask: "sell" }[side]
         params = {
@@ -277,7 +271,7 @@ class CoinbaseRest(object):
         if orderId is not None: url += '/' + orderId
         return self._auth_delj(url, raise_errors=raise_errors)
 
-    def book(self, symbol=BTCUSD, level=2, raw=False):
+    def book(self, symbol=Symbol.BTC_USD, level=2, raw=False):
         """
         The book looks like ( from https://docs.exchange.coinbase.com/?python#get-product-order-book ):
 
@@ -300,7 +294,7 @@ class CoinbaseRest(object):
         if raw: return book.text
         else: return book.json()
 
-    def book_snapshot(self, symbol=BTCUSD):
+    def book_snapshot(self, symbol=Symbol.BTC_USD):
         book = self.book(symbol)
         def mkassign(ts, price, size, side):
             return Assign(ts, VENUE, symbol, price, size, side)

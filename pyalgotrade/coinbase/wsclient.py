@@ -30,27 +30,13 @@ from pyalgotrade.coinbase import common
 from pyalgotrade.orderbook import OrderBook, MarketUpdate
 from pyalgotrade.coinbase.streamsync import StreamSynchronizer
 
-from pyalgotrade.coinbase.netclients import toBookMessages, lazy_init
+from pyalgotrade.coinbase.netclients import toBookMessages
 
 
 def get_current_datetime():
     return datetime.now()
 
 EPOCH = datetime(1970,1,1)
-
-
-class TradeBar(bar.BasicBar):
-
-    UP = 'UP'
-    DOWN = 'DOWN'
-
-    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
-        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
-        self.__direction = direction
-
-    def getDirection(self):
-        return self.__direction
-
 
 
 class CoinbaseMatch(object):
@@ -85,8 +71,8 @@ class CoinbaseMatch(object):
         volume = self.size
         adjClose = None
         freq = bar.Frequency.TRADE
-        dir_ = TradeBar.UP if self._j['side'] == 'sell' else TradeBar.DOWN
-        tbar = TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
+        dir_ = bar.TradeBar.UP if self._j['side'] == 'sell' else bar.TradeBar.DOWN
+        tbar = bar.TradeBar(self.datetime, open_, high, low, close, volume, adjClose, freq, dir_)
         tbar._seq = self.seq
         return tbar
 
@@ -151,10 +137,11 @@ class WebSocketClient(WebSocketClientBase):
     ON_MATCH = object()
     ON_ORDER_CHANGE = object()
 
-    def __init__(self):
+    def __init__(self, symbol):
         url = "wss://ws-feed.gdax.com"
         super(WebSocketClient, self).__init__(url)
         self.__queue = Queue.Queue()
+        self.__symbol = symbol
 
     def getQueue(self):
         return self.__queue
@@ -209,7 +196,7 @@ class WebSocketClient(WebSocketClientBase):
             self.__queue.put((WebSocketClient.ON_TRADE, cbm.TradeBar()))
         elif mtype in ('received', 'done'):
             self.__queue.put((WebSocketClient.ON_ORDER_CHANGE, OrderStateChange(m)))
-        bms = toBookMessages(m, 'BTCUSD')
+        bms = toBookMessages(m, self.__symbol)
         if bms:
             u = MarketUpdate(ts=get_current_datetime(), data=bms)
             self.__syncr.submit_streamdata(u)

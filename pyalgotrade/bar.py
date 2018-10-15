@@ -242,6 +242,21 @@ class BasicBar(Bar):
         return self.__extra
 
 
+class TradeBar(BasicBar):
+    """A BasicBar with direction - either an up-tick or a down-tick"""
+
+
+    UP = 'UP'
+    DOWN = 'DOWN'
+
+    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
+        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
+        self.__direction = direction
+
+    def getDirection(self):
+        return self.__direction
+
+
 class Bars(object):
 
     """A group of :class:`Bar` objects.

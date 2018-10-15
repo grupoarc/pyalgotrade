@@ -77,6 +77,11 @@ SYMBOL_LOCAL.update({
   "XZECZEUR": Symbol.ZEC_EUR,
   "XZECZJPY": Symbol.ZEC_JPY,
   "XZECZUSD": Symbol.ZEC_USD,
+  "ZUSD": Symbol.USD,
+  "ZEUR": Symbol.EUR,
+  "ZCAD": Symbol.CAD,
+  "ZJPY": Symbol.JPY,
+  "ZGBP": Symbol.GBP
 })
 
 # map from common pyalgotrade symbol to local symbols

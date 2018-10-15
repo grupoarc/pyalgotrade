@@ -104,8 +104,6 @@ class BacktestingBroker(backtesting.Broker):
         return bar.Bars({'BTC':fakebar})
 
     def _check_order(self, action, instrument, quantity, totalprice):
-        if instrument != common.btc_symbol:
-            raise Exception("Only BTC instrument is supported")
         if totalprice < BacktestingBroker.MIN_TRADE_USD:
             raise Exception("Trade must be >= %s" % (BacktestingBroker.MIN_TRADE_USD))
         if action == broker.Order.Action.BUY:
@@ -138,9 +136,6 @@ class BacktestingBroker(backtesting.Broker):
        return super(BacktestingBroker, self).createMarketOrder(action, instrument, quantity, onClose)
 
     def createLimitOrder(self, action, instrument, limitPrice, quantity):
-        if instrument != Symbol.BTC:
-            raise Exception("Only BTC instrument is supported")
-
         action = self._remap_action(action)
 
         if limitPrice * quantity < BacktestingBroker.MIN_TRADE_USD:
