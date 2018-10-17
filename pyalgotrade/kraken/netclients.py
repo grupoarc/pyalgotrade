@@ -201,7 +201,7 @@ class KrakenRest(object):
         offset - result offset
         closetime is one of 'open', 'close' or 'both'
         """
-        params = { 'ofs': offset, trades: 'true' if trades else 'false', closetime: closetime or 'both' }
+        params = { 'ofs': offset, 'trades': 'true' if trades else 'false', 'closetime': closetime or 'both' }
         if userref is not None: params['userref'] = userref
         if start is not None: params['start'] = start
         if end is not None: params['end'] = end
@@ -322,10 +322,8 @@ class KrakenRest(object):
         return { SYMBOL_LOCAL[p]: trait(d)
                    for p, d in self.asset_pairs().items() if p in SYMBOL_LOCAL }
 
-    def OpenOrders(self):
-        return [self._order_to_Order(AttrDict(oinfo), txid) for txid, oinfo in self.open_orders(trades=True).items()]
-
-    def _order_to_Order(self, korder, txid):
+    def _order_to_Order(self, txid, oinfo, oei_info):
+        korder = AttrDict(oinfo)
         logger.debug("got krakenorder {!r}: {!r}".format(txid, korder))
         action = { 'buy': broker.Order.Action.BUY,
                   'sell': broker.Order.Action.SELL
@@ -347,29 +345,92 @@ class KrakenRest(object):
 
         if korder.get('opentm'):
             # Not sure which is more correct here, but refid isn't defined for open limit orders
-            o.setSubmitted(txid, korder.opentm)
+            o.setSubmitted(txid, datetime.fromtimestamp(korder.opentm))
             #o.setSubmitted(korder.refid, korder.opentm)
 
-        if korder.status == 'pending':
-            pass
-        elif korder.status == 'open':
-            if korder.get('vol_exc', 0) > 0:
-                o.setState(broker.Order.State.PARTIALLY_FILLED)
-            else:
-                o.setState(broker.Order.State.ACCEPTED)
-        elif korder.status == 'closed':
-            o.setState(broker.Order.State.FILLED)
-        elif korder.status == 'canceled':
-            o.setState(broker.Order.State.CANCELED)
-        elif korder.status == 'expired':
-            o.setState(broker.Order.State.CANCELED)
+        newstate = {'pending': broker.Order.State.SUBMITTED,
+                    'open': broker.Order.State.ACCEPTED,
+                    'closed': broker.Order.State.ACCEPTED,  # because we're going to mock OEI to fill it so we can get an avgFillPrice
+                    'canceled': broker.Order.State.CANCELED,
+                    'expired': broker.Order.State.CANCELED
+                    }[korder.status]
+        if korder.status == 'open' and korder.get('vol_exc', 0) > 0:
+            newstate = broker.Order.State.PARTIALLY_FILLED
+        o.setState(newstate)
 
         tradetime2dt = lambda t: datetime.fromtimestamp(t/1000)
 
-        for ttid, tinfo in korder.get('trades', {}).items():
-            o.addExectionInfo(OrderExecutionInfo(tinfo.price, tinfo.vol, tinfo.fee, tradetime2dt(tinfo.time)))
-
+        if korder.status == 'closed':
+            closetime = tradetime2dt(korder.get('closetm', korder.get('starttm')))
+            o.addExecutionInfo(OrderExecutionInfo(float(korder.price), float(korder.vol), float(korder.fee), closetime))
+        else:
+            tradelist = korder.get('trades')
+            if tradelist is None:
+                pass
+            elif type(tradelist) == dict:
+                for ttid, tinfo in tradelist:
+                    o.addExecutionInfo(OrderExecutionInfo(tinfo.price, tinfo.vol, tinfo.fee, tradetime2dt(tinfo.time)))
+            else: # list
+                for ttid in tradelist:
+                    if ttid in oei_info:
+                        o.addExecutionInfo(oei_info[ttid])
         return o
+
+    def OpenOrders(self):
+        return [self._order_to_Order(txid, oinfo) for txid, oinfo in self.open_orders(trades=True).items()]
+
+    def _fetch_all(self, fetchlambda, piecekey):
+        """assemble a full result from kraken's weird pagination
+           fetchlambda = a function that takes an offset and does a request for that offset from kraken
+           piecekey - the key in te result that has the partial results
+        """
+        results, count = None, None
+        while count is None or len(results) < count:
+            offset = 0 if results is None else len(results)
+            piece = fetchlambda(offset)['result']
+            count = piece['count']
+            result = piece[piecekey]
+            if type(result) == dict:
+                if results is None: results = {}
+                results.update(result)
+            else:
+                if results is None: results = []
+                results += result
+        return result
+
+    def _trade_to_OEI(self, info, txid):
+        price = info['price']
+        quantity = info['vol']
+        commission = info['fee']
+        timestamp = datetime.fromtimestamp(info['time'])
+        return OrderExecutionInfo(price, quantity, commission, timestamp)
+
+
+    def OrderExecutionInfo(self, since):
+        """ return a dict of recent trades as OrderExecutionInfo objects
+        """
+        def fetch(offset):
+            return self.trades_history(offset, ttype='all', trades=True, start=since)
+
+        return { txid: self._trade_to_OEI(info, txid) for txid, info in
+                self._fetch_all(fetch, 'trades').items() }
+
+    def ClosedOrders(self, since):
+        """Return a list of filled Orders newer than <since>
+        since is a unix timestamp
+        """
+        oei_info = self.OrderExecutionInfo(since)
+
+        def fetch(offset):
+            return self.closed_orders(offset, trades=True, start=since)
+
+        return [self._order_to_Order(txid, oinfo, oei_info) for txid, oinfo in
+                self._fetch_all(fetch, 'closed').items()]
+
+
+
+
+
 
 
 
