@@ -5,10 +5,12 @@ from datetime import datetime
 import hmac, hashlib, time, requests, base64, threading, Queue
 #import ujson as json
 
+from attrdict import AttrDict
 from requests.auth import AuthBase
 
 from .. import broker
 from .. import logger as pyalgo_logger
+from ..utils import memoize as lazy_init
 from ..broker import FloatTraits, OrderExecutionInfo
 from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 
@@ -23,27 +25,6 @@ def flmath(n):
 
 def fees(txnsize):
     return flmath(txnsize * float('0.0025'))
-
-
-
-# ---------------------------------------------------------------------------
-# Turn a kraken order into a pyalgotrade Order
-# ---------------------------------------------------------------------------
-
-from attrdict import AttrDict
-
-KrakenOrder = AttrDict
-
-#KrakenOrder = namedtuple('KrakenOrder', 'pair side type price price2 volume leverage oflags starttm expiretm userref close_type close_price close_price2')
-#KrakenOrder.__new__.__defaults__ = (None,) * len(KrakenOrder._fields)
-
-
-
-# ---------------------------------------------------------------------------
-#  Utilities
-# ---------------------------------------------------------------------------
-
-from ..utils import memoize as lazy_init
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +303,7 @@ class KrakenRest(object):
         return { SYMBOL_LOCAL[p]: trait(d)
                    for p, d in self.asset_pairs().items() if p in SYMBOL_LOCAL }
 
-    def _order_to_Order(self, txid, oinfo, oei_info):
+    def _order_to_Order(self, txid, oinfo, get_oei_info):
         korder = AttrDict(oinfo)
         logger.debug("got krakenorder {!r}: {!r}".format(txid, korder))
         action = { 'buy': broker.Order.Action.BUY,
@@ -371,6 +352,7 @@ class KrakenRest(object):
                 for ttid, tinfo in tradelist:
                     o.addExecutionInfo(OrderExecutionInfo(tinfo.price, tinfo.vol, tinfo.fee, tradetime2dt(tinfo.time)))
             else: # list
+                oei_info = get_oei_info()
                 for ttid in tradelist:
                     if ttid in oei_info:
                         o.addExecutionInfo(oei_info[ttid])
@@ -405,7 +387,7 @@ class KrakenRest(object):
         timestamp = datetime.fromtimestamp(info['time'])
         return OrderExecutionInfo(price, quantity, commission, timestamp)
 
-
+    @lazy_init
     def OrderExecutionInfo(self, since):
         """ return a dict of recent trades as OrderExecutionInfo objects
         """
@@ -415,17 +397,24 @@ class KrakenRest(object):
         return { txid: self._trade_to_OEI(info, txid) for txid, info in
                 self._fetch_all(fetch, 'trades').items() }
 
-    def ClosedOrders(self, since):
+    def ClosedOrders(self, since, symbols=None):
         """Return a list of filled Orders newer than <since>
         since is a unix timestamp
+        symbol is a list of symbols, or None for all
         """
-        oei_info = self.OrderExecutionInfo(since)
+        def get_oei_info():
+            return self.OrderExecutionInfo(since)
 
         def fetch(offset):
             return self.closed_orders(offset, trades=True, start=since)
 
-        return [self._order_to_Order(txid, oinfo, oei_info) for txid, oinfo in
-                self._fetch_all(fetch, 'closed').items()]
+        sym_check = lambda o: SYMBOL_LOCAL[o['descr']['pair']] in symbols
+        all_wanted = lambda o: True
+
+        wanted = sym_check if symbols else all_wanted
+
+        return [self._order_to_Order(txid, oinfo, get_oei_info) for txid, oinfo in
+                self._fetch_all(fetch, 'closed').items() if wanted(oinfo)]
 
 
 

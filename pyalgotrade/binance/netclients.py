@@ -7,10 +7,13 @@ from datetime import datetime
 
 import requests
 import ujson as json
+from attrdict import AttrDict
 from requests.auth import AuthBase
+from sortedcontainers import SortedList
 
 from .. import logger as pyalgo_logger
-from ..broker import FloatTraits, Order, LimitOrder, MarketOrder
+from ..utils import memoize as lazy_init
+from ..broker import FloatTraits, Order, LimitOrder, MarketOrder, OrderExecutionInfo
 from ..orderbook import Ask, Bid, Assign, MarketSnapshot
 from . import VENUE, DEFAULT_SYMBOL, LOCAL_SYMBOL, SYMBOL_LOCAL
 
@@ -54,20 +57,6 @@ def toBookMessages(binance_json, symbol):
 #  Utilities
 # ---------------------------------------------------------------------------
 
-
-class lazy_init(object):
-    """
-    A decorator for single, lazy, initialization of (usually) a property
-    Could also be viewed as caching the first return value
-    """
-    def __init__(self, f):
-        self.val = None
-        self.f = f
-
-    def __call__(self, *args, **kwargs):
-        if self.val is None:
-            self.val = self.f(*args, **kwargs)
-        return self.val
 
 
 
@@ -135,13 +124,6 @@ class BinanceSign(BinanceAuth):
 
 URL = "https://api.binance.com/api/"
 
-from attrdict import AttrDict
-
-BinanceOrder = AttrDict
-
-#BinanceOrder = namedtuple('BinanceOrder', 'id size price done_reason status settled filled_size executed_value product_id fill_fees side created_at done_at')
-#BinanceOrder.__new__.__defaults__ = (None,) * len(BinanceOrder._fields)
-
 class BinanceRest(object):
 
     # Time in Force
@@ -202,6 +184,7 @@ class BinanceRest(object):
     def server_time(self):
         return self._getj('v1/time')
 
+    @lazy_init
     def exchange_info(self):
         return self._getj('v1/exchangeInfo')
 
@@ -210,7 +193,6 @@ class BinanceRest(object):
 
     def trades(self, symbol=DEFAULT_SYMBOL, limit=100):
         return self._getj('v1/trades', params={ 'symbol': symbol, 'limit': limit })
-
 
     #
     # Account (private endpoints)
@@ -234,6 +216,38 @@ class BinanceRest(object):
         params = {'symbol': LOCAL_SYMBOL[symbol]} if symbol is not None else {}
         return self._sign_getj('v3/openOrders', params=params)
 
+    def all_orders(self, symbol, min_orderId=None, startTime=None, endTime=None, limit=1000):
+        params = {'symbol': LOCAL_SYMBOL[symbol], 'limit': limit}
+        if min_orderId is not None: params['orderId'] = min_orderId
+        if startTime is not None: params['startTime'] = startTime
+        if endTime is not None: params['endTime'] = endTime
+        return self._sign_getj('v3/allOrders', params=params)
+
+    def all_orders_full(self, symbol, startTime, endTime=None):
+        LIMIT_BY=1000
+        result, received = [], None
+        while received is None or len(received) == LIMIT_BY:
+            min_id = None if received is None else received[-1]['orderId'] + 1
+            received = self.all_orders(symbol, min_orderId=min_id, startTime=startTime, endTime=endTime, limit=LIMIT_BY)
+            result += received
+        return result
+
+    def my_trades(self, symbol, minId=None, startTime=None, endTime=None, limit=1000):
+        params = {'symbol': LOCAL_SYMBOL[symbol], 'limit': limit}
+        if minId is not None: params['fromId'] = minId
+        if startTime is not None: params['startTime'] = startTime
+        if endTime is not None: params['endTime'] = endTime
+        return self._sign_getj('v3/myTrades', params=params)
+
+    def my_trades_full(self, symbol, startTime, endTime=None):
+        LIMIT_BY=1000
+        result, received = [], None
+        while received is None or len(received) == LIMIT_BY:
+            min_id = None if received is None else received[-1]['id'] + 1
+            received = self.my_trades(symbol, minId=min_id, startTime=startTime, endTime=endTime, limit=LIMIT_BY)
+            result += received
+        return result
+
     #
     # Cooked endpoints
     #
@@ -250,21 +264,22 @@ class BinanceRest(object):
     def OpenOrders(self, symbol=None):
         return [self._order_to_Order(oinfo) for oinfo in self.open_orders(symbol)]
 
-    def _order_to_Order(self, oinfo):
+    def _order_to_Order(self, oinfo, oei_info={}):
         logger.debug("making Order from {!r}".format(oinfo,))
+        oinfo = AttrDict(oinfo)
         action = { 'BUY': Order.Action.BUY,
                   'SELL': Order.Action.SELL
-                 }.get(oinfo['side'])
+                 }.get(oinfo.side)
         if action is None:
             raise Exception("Invalid order side")
-        size = float(oinfo['origQty'])
-        symbol =  SYMBOL_LOCAL[oinfo['symbol']]
+        size = float(oinfo.origQty)
+        symbol =  SYMBOL_LOCAL[oinfo.symbol]
         instrumentTraits = self.instrumentTraits()[symbol]
 
-        if oinfo['type'] == 'LIMIT': # limit order
-            price = float(oinfo['price'])
+        if oinfo.type == 'LIMIT': # limit order
+            price = float(oinfo.price)
             o = LimitOrder(action, symbol, price, size, instrumentTraits)
-        elif oinfo['type']  == 'MARKET':  # Market order
+        elif oinfo.type  == 'MARKET':  # Market order
             onClose = False # TBD
             o = MarketOrder(action, symbol, size, onClose, instrumentTraits)
         else:
@@ -274,23 +289,30 @@ class BinanceRest(object):
         o.setSubmitted(oinfo['orderId'], submit_time)
 
         # status is one of:
-        #NEW
-        #PARTIALLY_FILLED
-        #FILLED
-        #CANCELED
-        #PENDING_CANCEL (currently unused)
-        #REJECTED
-        #EXPIRED
-        if oinfo['status'] == 'NEW':
+        # NEW, PARTIALLY_FILLED, FILLED, CANCELED, PENDING_CANCEL (currently unused), REJECTED, EXPIRED
+        has_oei = False
+        if oinfo.status == 'NEW':
             o.setState(Order.State.ACCEPTED)
-        elif oinfo['status'] == 'PARTIALLY_FILLED':
-            o.setState(Order.State.PARTIALLY_FILLED)
-        elif oinfo['status'] == 'FILLED':
-            o.setState(Order.State.FILLED)
-        elif oinfo['status'] in ('CANCELED', 'EXPIRED', 'REJECTED'):
+        elif oinfo.status == 'PARTIALLY_FILLED':
+            has_oei = True
+            o.setState(Order.State.ACCEPTED)
+        elif oinfo.status == 'FILLED':
+            has_oei = True
+            o.setState(Order.State.ACCEPTED) # adding OEI info below will make it filled
+        elif oinfo.status in ('CANCELED', 'EXPIRED', 'REJECTED'):
             o.setState(Order.State.CANCELED)
         else:
-            raise ValueError("Unsuported Order status: " + oinfo['status'])
+            raise ValueError("Unsuported Order status: " + oinfo.status)
+
+        if oinfo.orderId in oei_info:
+            for oei in oei_info[oinfo.orderId]:
+                o.addExecutionInfo(oei)
+        else:
+            qty = float(oinfo.get('executedQty', 0))
+            if qty > 0 or has_oei:
+                price = float(oinfo.price)
+                update_tm = datetime.fromtimestamp(float(oinfo.updateTime/1000))
+                o.addExecutionInfo(OrderExecutionInfo(price, qty, 0, update_tm))
 
         return o
 
@@ -328,4 +350,45 @@ class BinanceRest(object):
                 extra['timeInForce'] = val
         o = self.order(symbol, side, "MARKET", size, extra=extra)
         return o['orderId']
+
+    def _trade_to_OEI(self, info):
+        price = float(info['price'])
+        quantity = float(info['qty'])
+        commission = float(info['commission'])
+        timestamp = datetime.fromtimestamp(info['time']/1000.0)
+        return OrderExecutionInfo(price, quantity, commission, timestamp)
+
+    @lazy_init
+    def OrderExecutionInfo(self, since, symbols=None):
+
+        if symbols is None:
+            symbols = set(SYMBOL_LOCAL[s] for s in self.tradeable())
+
+        oei_info = {}
+        for symbol in symbols:
+            for t in self.my_trades_full(symbol, startTime=since):
+                oid = t['orderId']
+                oei = self._trade_to_OEI(t)
+                if oid in oei_info:
+                    oei_info[oid].append(oei)
+                else:
+                    oei_info[oid] = [oei]
+        return oei_info
+
+
+    def ClosedOrders(self, since, symbols=None):
+        """Return a list of filled Orders newer than <since>
+        since is a unix timestamp
+        symbol is a list of Symbols, or None for all
+        """
+
+        if symbols is None:
+            symbols = set(SYMBOL_LOCAL[s] for s in self.tradeable())
+
+        orders = SortedList(key=lambda o: o.getSubmitDateTime())
+        oei_info = self.OrderExecutionInfo(since, symbols)
+        for sym in symbols:
+            orders.update(self._order_to_Order(o, oei_info) for o in self.all_orders_full(sym, since))
+
+        return list(orders)
 
