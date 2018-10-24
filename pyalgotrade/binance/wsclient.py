@@ -28,7 +28,7 @@ from .. import logger as pyalgo_logger
 from ..bar import TradeBar
 from ..websocket.client import WebSocketClientBase
 from ..orderbook import OrderBook, MarketUpdate
-from .streamsync import StreamSynchronizer
+from ..websocket.streamsync import StreamSynchronizer
 from .netclients import toBookMessages, LOCAL_SYMBOL, BinanceRest
 
 

@@ -23,14 +23,14 @@ from datetime import datetime
 import threading
 import Queue
 
-from pyalgotrade import bar
-from pyalgotrade.broker import Order, OrderEvent, OrderExecutionInfo
-from pyalgotrade.websocket.client import WebSocketClientBase
-from pyalgotrade.coinbase import common
-from pyalgotrade.orderbook import OrderBook, MarketUpdate
-from pyalgotrade.coinbase.streamsync import StreamSynchronizer
+from .. import bar
+from ..broker import Order, OrderEvent, OrderExecutionInfo
+from ..websocket.client import WebSocketClientBase
+from . import common
+from ..orderbook import OrderBook, MarketUpdate
+from ..websocket.streamsync import StreamSynchronizer
 
-from pyalgotrade.coinbase.netclients import toBookMessages
+from .netclients import toBookMessages
 
 
 def get_current_datetime():
