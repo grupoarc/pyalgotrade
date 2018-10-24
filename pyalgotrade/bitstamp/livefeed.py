@@ -23,16 +23,16 @@ import time
 
 from six.moves import queue
 
-from pyalgotrade import bar
-from pyalgotrade import barfeed
-from pyalgotrade import observer
-from pyalgotrade.bitstamp import common
-from pyalgotrade.bitstamp import wsclient
+from .. import bar
+from .. import barfeed
+from .. import observer
+from . import common
+from . import wsclient
 
 
 class TradeBar(bar.Bar):
     # Optimization to reduce memory footprint.
-    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount')
+    __slots__ = ('__dateTime', '__tradeId', '__price', '__amount', '__buy')
 
     def __init__(self, dateTime, trade):
         self.__dateTime = dateTime

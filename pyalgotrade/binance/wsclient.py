@@ -19,27 +19,25 @@
 """
 
 import Queue
+import logging
 import threading
 from datetime import datetime
 
-from pyalgotrade import bar
-from pyalgotrade.broker import Order, OrderEvent, OrderExecutionInfo
-from pyalgotrade.websocket.client import WebSocketClientBase
-from pyalgotrade.binance import common
-from pyalgotrade.orderbook import OrderBook, MarketUpdate
-from pyalgotrade.binance.streamsync import StreamSynchronizer
+from .. import bar
+from .. import logger as pyalgo_logger
+from ..bar import TradeBar
+from ..websocket.client import WebSocketClientBase
+from ..orderbook import OrderBook, MarketUpdate
+from .streamsync import StreamSynchronizer
+from .netclients import toBookMessages, LOCAL_SYMBOL, BinanceRest
 
-from pyalgotrade.binance.netclients import toBookMessages, LOCAL_SYMBOL, BinanceRest
 
-import logging
+logger = pyalgo_logger.getLogger(__name__)
 
-access_log = logging.getLogger("tornado.access")
-access_log.setLevel(logging.DEBUG)
-app_log = logging.getLogger("tornado.application")
-app_log.setLevel(logging.DEBUG)
-gen_log = logging.getLogger("tornado.general")
-gen_log.setLevel(logging.DEBUG)
-
+loglevel = logger.getEffectiveLevel()
+logging.getLogger("tornado.access").setLevel(loglevel)
+logging.getLogger("tornado.application").setLevel(loglevel)
+logging.getLogger("tornado.general").setLevel(loglevel)
 
 
 
@@ -47,20 +45,6 @@ def get_current_datetime():
     return datetime.now()
 
 EPOCH = datetime(1970,1,1)
-
-
-class TradeBar(bar.BasicBar):
-
-    UP = 'UP'
-    DOWN = 'DOWN'
-
-    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
-        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
-        self.__direction = direction
-
-    def getDirection(self):
-        return self.__direction
-
 
 
 class BinanceMatch(object):
@@ -124,7 +108,7 @@ class WebSocketClient(WebSocketClientBase):
         url = "wss://stream.binance.com:9443/ws/" + '/'.join(streams)
         #headers = [("X-MBX-APIKEY", key)]
         headers = []
-        common.logger.info("Initializing connection to " + url + " with headers: " + repr(headers))
+        logger.info("Initializing connection to " + url + " with headers: " + repr(headers))
         self.__queue = Queue.Queue()
         self.__RESTClient = BinanceRest(key, secret)
         super(WebSocketClient, self).__init__(url, headers=headers)
@@ -137,7 +121,7 @@ class WebSocketClient(WebSocketClientBase):
     # WebSocketClientBase events.
 
     def onOpened(self):
-        common.logger.info("Connected")
+        logger.info("Connected")
         self.__queue.put((WebSocketClient.ON_CONNECTED, None))
         self._book = OrderBook()
 
@@ -161,7 +145,7 @@ class WebSocketClient(WebSocketClientBase):
 
     def _apply_full(self, syncdata):
         self._book.update(syncdata)
-        common.logger.info("got sync")
+        logger.info("got sync")
         return syncdata.data[0].rts
 
 
@@ -181,19 +165,19 @@ class WebSocketClient(WebSocketClientBase):
             self.__queue.put((WebSocketClient.ON_MATCH, cbm))
             self.__queue.put((WebSocketClient.ON_TRADE, cbm.TradeBar()))
         else:
-            common.logger.error("Unknown Stream type in message: " + repr(m))
+            logger.error("Unknown Stream type in message: " + repr(m))
             return
 
     def onClosed(self, code, reason):
-        common.logger.info("Closed. Code: %s. Reason: %s." % (code, reason))
+        logger.info("Closed. Code: %s. Reason: %s." % (code, reason))
         self.__queue.put((WebSocketClient.ON_DISCONNECTED, None))
 
     def onDisconnectionDetected(self):
-        common.logger.warning("Disconnection detected.")
+        logger.warning("Disconnection detected.")
         try:
             self.stopClient()
         except Exception as e:
-            common.logger.error("Error stopping websocket client: %s." % (str(e)))
+            logger.error("Error stopping websocket client: %s." % (str(e)))
         self.__queue.put((WebSocketClient.ON_DISCONNECTED, None))
 
 
@@ -210,19 +194,19 @@ class WebSocketClientThread(threading.Thread):
         return self.__wsClient.getQueue()
 
     def start(self):
-        common.logger.info("Connecting websocket client and starting thread.")
+        logger.info("Connecting websocket client and starting thread.")
         self.__wsClient.connect()
         super(WebSocketClientThread, self).start()
-        common.logger.info("Websocket client thread started.")
+        logger.info("Websocket client thread started.")
 
 
     def run(self):
-        common.logger.info("Starting websocket client in client thread.")
+        logger.info("Starting websocket client in client thread.")
         self.__wsClient.startClient() # this is the tornado IOLoop
 
     def stop(self):
         try:
-            common.logger.info("Stopping websocket client.")
+            logger.info("Stopping websocket client.")
             self.__wsClient.stopClient()
         except Exception as e:
-            common.logger.error("Error stopping websocket client: %s." % (str(e)))
+            logger.error("Error stopping websocket client: %s." % (str(e)))

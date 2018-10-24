@@ -21,11 +21,13 @@
 import time
 import Queue
 
-from pyalgotrade import bar
-from pyalgotrade import barfeed
-from pyalgotrade import observer
-from pyalgotrade.binance import common
-from pyalgotrade.binance import wsclient
+from .. import bar
+from .. import barfeed
+from .. import observer
+from .. import logger as pyalgo_logger
+from . import wsclient
+
+logger = pyalgo_logger.getLogger(__name__)
 
 class LiveFeed(barfeed.BaseBarFeed):
 
@@ -77,7 +79,7 @@ class LiveFeed(barfeed.BaseBarFeed):
 
     def __initializeClient(self):
         self.__initializationOk = None
-        common.logger.info("Initializing websocket client.")
+        logger.info("Initializing websocket client.")
 
         try:
             # Start the thread that runs the client.
@@ -85,23 +87,23 @@ class LiveFeed(barfeed.BaseBarFeed):
             self.__thread.start()
         except Exception as e:
             self.__initializationOk = False
-            common.logger.error("Error connecting : %s" % str(e))
+            logger.error("Error connecting : %s" % str(e))
 
         # Wait for initialization to complete.
         while self.__initializationOk is None and self.__thread.is_alive():
             self.__dispatchImpl([wsclient.WebSocketClient.ON_CONNECTED])
 
         if self.__initializationOk:
-            common.logger.info("Initialization ok.")
+            logger.info("Initialization ok.")
         else:
-            common.logger.error("Initialization failed.")
+            logger.error("Initialization failed.")
         return self.__initializationOk
 
     def __onDisconnected(self, *_):
         if self.__enableReconnection:
             initialized = False
             while not self.__stopped and not initialized:
-                common.logger.info("Reconnecting")
+                logger.info("Reconnecting")
                 initialized = self.__initializeClient()
                 if not initialized:
                     time.sleep(5)
@@ -125,7 +127,7 @@ class LiveFeed(barfeed.BaseBarFeed):
 
         todo = self.EVENT_HANDLER.get(eventType)
         if todo is None:
-            common.logger.error("Invalid event received to dispatch: %s - %s" % (eventType, eventData))
+            logger.error("Invalid event received to dispatch: %s - %s" % (eventType, eventData))
             return False
 
         todo(eventData)
@@ -167,10 +169,10 @@ class LiveFeed(barfeed.BaseBarFeed):
         try:
             self.__stopped = True
             if self.__thread is not None and self.__thread.is_alive():
-                common.logger.info("Shutting down websocket client.")
+                logger.info("Shutting down websocket client.")
                 self.__thread.stop()
         except Exception as e:
-            common.logger.error("Error shutting down client: %s" % (str(e)))
+            logger.error("Error shutting down client: %s" % (str(e)))
 
     def isAlive(self):
         return self.__thread and self.__thread.isAlive()

@@ -23,28 +23,16 @@ from datetime import datetime
 import threading
 import Queue
 
-from pyalgotrade import bar
-from pyalgotrade.websocket.client import WebSocketClientBase
-from pyalgotrade.bitfinex import common
-from pyalgotrade.orderbook import OrderBook
+from .. import bar
+from ..websocket.client import WebSocketClientBase
+from ..orderbook import OrderBook
+from . import common
 
-from pyalgotrade.bitfinex.netclients import toMarketMessage
-
+from .netclients import toMarketMessage
+from ..bar import TradeBar
 
 def get_current_datetime():
     return datetime.now()
-
-class TradeBar(bar.BasicBar):
-
-    UP = 'UP'
-    DOWN = 'DOWN'
-
-    def __init__(self, time, open_, high, low, close, volume, adjClose, freq, direction):
-        super(TradeBar, self).__init__(time, open_, high, low, close, volume, adjClose, freq)
-        self.__direction = direction
-
-    def getDirection(self):
-        return self.__direction
 
 
 class WebSocketClient(WebSocketClientBase):
@@ -138,7 +126,7 @@ class WebSocketClient(WebSocketClientBase):
         common.logger.warning("Disconnection detected.")
         try:
             self.stopClient()
-        except Exception, e:
+        except Exception as e:
             common.logger.error("Error stopping websocket client: %s." % (str(e)))
         self.__queue.put((WebSocketClient.ON_DISCONNECTED, None))
 
@@ -165,5 +153,5 @@ class WebSocketClientThread(threading.Thread):
         try:
             common.logger.info("Stopping websocket client.")
             self.__wsClient.stopClient()
-        except Exception, e:
+        except Exception as e:
             common.logger.error("Error stopping websocket client: %s." % (str(e)))

@@ -1,5 +1,5 @@
 
-from pyalgotrade.binance import livefeed
+from . import livefeed
 
 
 LiveTradeFeed = livefeed.LiveTradeFeed

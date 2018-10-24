@@ -1,6 +1,7 @@
 
+from .. import logger as pyalgo_logger
 
-from pyalgotrade.binance.common import logger
+logger = pyalgo_logger.getLogger(__name__)
 
 def noop(*args, **kwargs): pass
 

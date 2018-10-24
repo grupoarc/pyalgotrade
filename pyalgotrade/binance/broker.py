@@ -21,14 +21,12 @@
 import threading
 from datetime import datetime
 
-from pyalgotrade import bar, Symbol
-from pyalgotrade import broker
-from pyalgotrade.broker import backtesting, MarketOrder
-from pyalgotrade.binance import common
-from pyalgotrade.binance import livebroker
-from pyalgotrade.orderbook import OrderBook, Bid, Ask
+from .. import bar, broker
+from ..bar import TradeBar
+from ..broker import backtesting, MarketOrder, FloatTraits
+from ..orderbook import OrderBook, Bid, Ask
+from . import livebroker
 
-from pyalgotrade.binance.wsclient import TradeBar
 
 LiveBroker = livebroker.LiveBroker
 
@@ -72,7 +70,7 @@ class BacktestingBroker(backtesting.Broker):
         self._Broker__shares['BTC'] = cash
 
     def getInstrumentTraits(self, instrument):
-        return common.BTCTraits()
+        return FloatTraits(8,2)
 
     def submitOrder(self, order):
         if order.isInitial():

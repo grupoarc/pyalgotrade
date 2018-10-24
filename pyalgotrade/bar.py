@@ -245,7 +245,6 @@ class BasicBar(Bar):
 class TradeBar(BasicBar):
     """A BasicBar with direction - either an up-tick or a down-tick"""
 
-
     UP = 'UP'
     DOWN = 'DOWN'
 
@@ -255,6 +254,57 @@ class TradeBar(BasicBar):
 
     def getDirection(self):
         return self.__direction
+
+
+
+class SinglePriceTradeBar(Bar):
+    # Optimization to reduce memory footprint.
+    __slots__ = ('__dateTime', '__price', '__amount')
+
+    def __init__(self, dateTime, price, amount):
+        self.__dateTime = dateTime
+        self.__price = price
+        self.__amount = amount
+
+    def __setstate__(self, state):
+        (self.__dateTime, self.__price, self.__amount) = state
+
+    def __getstate__(self):
+        return (self.__dateTime, self.__price, self.__amount)
+
+    def setUseAdjustedValue(self, useAdjusted):
+        if useAdjusted:
+            raise Exception("Adjusted close is not available")
+
+    def getUseAdjValue(self):
+        return False
+
+    def getDateTime(self):
+        return self.__dateTime
+
+    def getOpen(self, adjusted=False):
+        return self.__price
+
+    def getHigh(self, adjusted=False):
+        return self.__price
+
+    def getLow(self, adjusted=False):
+        return self.__price
+
+    def getClose(self, adjusted=False):
+        return self.__price
+
+    def getVolume(self):
+        return self.__amount
+
+    def getAdjClose(self):
+        return None
+
+    def getFrequency(self):
+        return bar.Frequency.TRADE
+
+    def getPrice(self):
+        return self.__price
 
 
 class Bars(object):
